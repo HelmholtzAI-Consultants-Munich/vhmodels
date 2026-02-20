@@ -25,7 +25,7 @@ class VHModel:
             for name, meta in cls._registry.items()
         }
 
-    def load_model(self, repo_id=None, **kwargs):
+    def load_model(self, model=None, **kwargs):
         raise NotImplementedError("This model does not support loading.")
 
     def encode(self, inputs, **kwargs):
