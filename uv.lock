@@ -92,9 +92,13 @@ wheels = [
 name = "virtual-human-chc"
 version = "0.1.0"
 source = { virtual = "." }
-dependencies = [
+
+[package.dev-dependencies]
+dev = [
     { name = "pdoc3" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pdoc3", specifier = ">=0.11.6" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pdoc3", specifier = ">=0.11.6" }]
