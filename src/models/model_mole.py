@@ -1,4 +1,4 @@
-from vhmodels import VHModel
+from .vhmodels import VHModel
 
 class MolE(
     VHModel,
