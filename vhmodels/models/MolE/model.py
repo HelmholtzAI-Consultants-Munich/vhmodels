@@ -1,31 +1,49 @@
-from .vhmodels import VHModel
+from vhmodels.vh_checker.base import BaseModel
+import torch
+import yaml
+import pickle
+import pandas as pd
+from huggingface_hub import hf_hub_download
+from mole_package import ginet_concat, mole_antimicrobial_prediction, mole_representation, dataset_representation
 
 class MolE(
-    VHModel,
-    name="MolE",
+    BaseModel,
+    project="mole",
     description="MolE learns task-independent molecular representations of chemicals via Graph Isomorphism Networks (GINs)", 
     link="https://huggingface.co/virtual-human-chc/MolE"                       
 ):
+    
     def __init__(self):
-        ...
-        
+        self.repo = "virtual-human-chc/MolE"
+        self.model = None
+        self.xgb = None
+        self.device = None
+          
     def load_model(self, model=None, **kwargs):
         """
         Downloads and loads the necessary artifacts for the MolE model from HuggingFace. 
 
         The function retrieves and prepares the following files: 
         - config.yaml: Contains the transformer configuration.
-        - model.pth: Contains the trained model weights. 
-        - MolE-XGBoost-08.03.2024_14.20.pkl: Contains the XGBoost model used within MolE. 
+        - model.pth: Contains the model weights. 
 
         Returns 
         ------- 
-        Type of the model 
-            The loaded model 
+        None
         """
-        ...
+        
+        if model not in self.model_config:
+            raise ValueError(
+                f"Unknown model '{self.model}' in DinoBloom. Available models: {list(self.model_config.keys())}"
+            )
+
+        # Download + load
+        cfg = yaml.safe_load(open(hf_hub_download(self.repo, "config.yaml")))
+        self.model = ginet_concat.GINet(**cfg["model"]).to(self.device)
+        self.model.load_state_dict(torch.load(hf_hub_download(self.repo, "model.pth"), map_location=self.device))
+        self.xgb = pickle.load(open(hf_hub_download(self.repo, "MolE-XGBoost-08.03.2024_14.20.pkl"), "rb"))
     
-    def encode(self, inputs, **kwargs):
+    def transform(self, data, **kwargs):
         """ 
         Creates embeddings for the provided input data. 
 
@@ -59,14 +77,18 @@ class MolE(
         Opicapone      16.270607  30.276501  0.966270  ...  -4.108759 -41.224167  18.833054
         Ebastine       36.845181  69.056267  4.710568  ...  -8.217525 -82.448318   7.520126
         """ 
-        ...
-    
-    def predict(self, inputs, **kwargs):
-        ...
-    
-    def generate(self, num_samples, **kwargs):
-        ...
-    
+        smiles_tsv = data
+        smiles_df = mole_representation.read_smiles(smiles_tsv, "smiles", "chem_name")
+        emb = dataset_representation.batch_representation(smiles_df, self.model, "smiles", "chem_name", device=self.device)
+        X_input = mole_antimicrobial_prediction.add_strains(
+            emb, "input/maier_screening_results.tsv.gz"
+        )
+        probs = self.xgb.predict_proba(X_input)[:, 1]
+        return pd.DataFrame(
+            {"antimicrobial_predictive_probability": probs},
+            index=X_input.index
+        )
+
 if __name__=='__main__':
     ...
     

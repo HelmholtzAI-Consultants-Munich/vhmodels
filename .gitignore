@@ -1,1 +1,4 @@
-src/models/__pycache__
+vhmodels/vh_checker/__pycache__
+vhmodels/__pycache__
+./vhmodels.egg-info/*
+models/DinoBloom/001.bmp
