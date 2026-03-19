@@ -4,6 +4,7 @@ import os
 import json
 from pathlib import Path
 from vhmodels.vh_checker.base import BaseModel
+from vhmodels.vh_checker.base import REGISTRY
 
 @click.group()
 def main():
@@ -13,10 +14,13 @@ def main():
 @main.command()
 def list():
     """Display all registered models and their descriptions."""
-    models = BaseModel.list_available_models()
-    if not models:
-        click.echo("No models found. Ensure models are correctly registered in vhmodels/models/")
-        return
+    # !!! Implement later
+
+
+    #models = BaseModel.list_available_models()
+    # if not models:
+    #     click.echo("No models found. Ensure models are correctly registered in vhmodels/models/")
+    #     return
 
     # click.echo(f"{'Model ID':<15} | {'Description'}")
     # click.echo("-" * 60)
@@ -24,29 +28,29 @@ def list():
     # for m in models:
     #      click.echo(f"{m['id']:<15} | {m['desc']}")
 
-    for m in models:
-        # Use click.style to make the ID stand out
-        model_id = click.style(m['id'], fg="cyan", bold=True)
-        click.echo(f"ID: {model_id}")
+    # for m in models:
+    #     # Use click.style to make the ID stand out
+    #     model_id = click.style(m['id'], fg="cyan", bold=True)
+    #     click.echo(f"ID: {model_id}")
         
-        # Nicely indent the metadata
-        click.echo(f"  Description : {m['desc']}")
-        click.echo(f"  HF Link     : {m.get('link', 'N/A')}")
+    #     # Nicely indent the metadata
+    #     click.echo(f"  Description : {m['desc']}")
+    #     click.echo(f"  HF Link     : {m.get('link', 'N/A')}")
         
-        # We can use pprint for just the complex bits if they exist, 
-        # but for now, simple strings are cleaner:
-        click.echo("-" * 60)
+    #     # We can use pprint for just the complex bits if they exist, 
+    #     # but for now, simple strings are cleaner:
+    #     click.echo("-" * 60)
 
 @main.command()
 @click.argument('project')
 def create_env(project):
     """Create a Conda environment for a specific model."""
-    if project not in BaseModel._registry:
+    if project not in REGISTRY.keys():
         click.echo(f"Error: Model '{project}' is not registered.")
         return
 
-    model_cls = BaseModel._registry[project]
-    env_name = model_cls.env_name
+    #model_cls = BaseModel.get_class(project)
+    env_name = f'vhmodels-{project}' #model_cls.env_name
     
     # Locate the model directory dynamically (handling potential capitalization)
     models_dir = Path(__file__).parent.parent / "models"

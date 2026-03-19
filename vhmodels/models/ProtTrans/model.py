@@ -72,15 +72,15 @@ class ProtTrans(
         else:
             ... # implement for other models
         
-    def preprocess(self, data):
+    def _preprocess(self, input):
         """
         Expects input like "MKVILLLLAVVAFGHALCRV".
 
         Example input: [“PRTEINO”, “SEQWENCE”] 
         """
-        return [" ".join(list(re.sub(r"[UZOB]", "X", seq))) for seq in data]   
+        return [" ".join(list(re.sub(r"[UZOB]", "X", seq))) for seq in input]   
     
-    def transform(self, data, **kwargs):
+    def transform(self, input, **kwargs):
         """
         Creates the embeddings for the input data. The function expects the model to be loaded already. 
 
@@ -105,9 +105,9 @@ class ProtTrans(
         if self.model is None:
             raise RuntimeError("Model not loaded. Call load_model() first.")
         
-        inputs = self.preprocess(data)
+        input = self._preprocess(input)
         
-        ids = self.tokenizer.batch_encode_plus(inputs, add_special_tokens=True, padding="longest")
+        ids = self.tokenizer.batch_encode_plus(input, add_special_tokens=True, padding="longest")
         input_ids = torch.tensor(ids['input_ids']).to(self.device)
         attention_mask = torch.tensor(ids['attention_mask']).to(self.device)
 

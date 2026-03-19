@@ -1,2 +1,0 @@
-[console_scripts]
-vh-checker = vhmodels.vh_checker.cli:main

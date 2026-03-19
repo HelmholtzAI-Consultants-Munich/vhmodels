@@ -2,15 +2,16 @@ from vhmodels.vh_checker.base import BaseModel
 from huggingface_hub import hf_hub_download
 import torch
 import torch.nn as nn
+import tqdm
 from torchvision import transforms
 from pathlib import Path
 from PIL import Image
 
 class DinoBloom(
     BaseModel,
-    project="dinobloom",
-    description="a ViT (Vision Transformer) built upon DINOv2 (Meta AI) and trained on data of single cells from peripheral blood and bone marrow", 
-    link="https://huggingface.co/virtual-human-chc/DinoBloom"                       
+    #project="dinobloom",
+    #description="a ViT (Vision Transformer) built upon DINOv2 (Meta AI) and trained on data of single cells from peripheral blood and bone marrow", 
+    #link="https://huggingface.co/virtual-human-chc/DinoBloom"                       
 ):
     def __init__(self):
         self.model_config = {
@@ -45,24 +46,22 @@ class DinoBloom(
         model : str 
             Version of the model 
         
-        device : str
+        device : torch.device or str, optional
             The device that should be used. Either "cuda" or "cpu"
         
         Returns
         ------
         None
         """
+        # Check if the selected model exists
         if model not in self.model_config:
             raise ValueError(
                 f"Unknown model '{self.model}' in DinoBloom. Available models: {list(self.model_config.keys())}"
             )
-
-        self.device = kwargs.get(
-            "device",
-            torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        )
-
-        self.device = torch.device(self.device)
+        
+        # Get user's input for device; otherwise, fall back to pytorch function
+        self.device = torch.device(kwargs.get("device", 
+                                              "cuda" if torch.cuda.is_available() else "cpu"))
 
         dinov2_model, embed_dim = self.model_config[model]
 
@@ -83,7 +82,7 @@ class DinoBloom(
         self.model.to(self.device)
         self.model.eval()
     
-    def preprocess(self, data):
+    def _preprocess(self, input):
         """
         Preprocess images for transformer models.
 
@@ -94,7 +93,7 @@ class DinoBloom(
 
         Parameters
         ----------
-        inputs : str | Path | PIL.Image | list
+        input : str | Path | PIL.Image | list
             - Path to image
             - Path to folder of images
             - PIL image
@@ -105,21 +104,21 @@ class DinoBloom(
         torch.Tensor
             Batch tensor of shape (N, 3, 224, 224)
         """
-
-        if data.get('inputs', None) is None:    
-            raise ValueError("'data' should be a dict with key 'inputs'")
+        # if data.get('inputs', None) is None:    
+        #     raise ValueError("'data' should be a dict with key 'inputs'")
         
-        inputs = data.get('inputs', None)
+        # inputs = data.get('inputs', None)
+        
 
         images = []
 
         # convert Path objects
-        if isinstance(inputs, Path):
-            inputs = str(inputs)
+        if isinstance(input, Path):
+            input = str(input)
 
         # case 1: path input
-        if isinstance(inputs, str):
-            p = Path(inputs)
+        if isinstance(input, str):
+            p = Path(input)
 
             if p.is_dir():
                 for img_path in sorted(p.iterdir()):
@@ -135,12 +134,12 @@ class DinoBloom(
                 raise ValueError("Invalid image path")
 
         # case 2: single PIL image
-        elif isinstance(inputs, Image.Image):
-            images.append(inputs)
+        elif isinstance(input, Image.Image):
+            images.append(input)
 
         # case 3: list of images
-        elif isinstance(inputs, list):
-            for item in inputs:
+        elif isinstance(input, list):
+            for item in input:
                 if isinstance(item, str):
                     img = Image.open(item).convert("RGB")
                     images.append(img)
@@ -150,7 +149,7 @@ class DinoBloom(
                     raise ValueError(f"Unsupported type: {type(item)}")
 
         else:
-            raise ValueError(f"Unsupported input type: {type(inputs)}")
+            raise ValueError(f"Unsupported input type: {type(input)}")
 
         # apply transforms
         tensors = [self.img_transform(img) for img in images]
@@ -158,43 +157,51 @@ class DinoBloom(
         # stack batch
         return torch.stack(tensors)
 
-    def transform(self, data, **kwargs):
+    def transform(self, input, batch_size=32, **kwargs):
         """
         Creates the embeddings for the input data. The function expects the model to be loaded already. 
 
         Parameters
         -------
-        inputs : torch.Tensor
+        input : torch.Tensor
             Preprocessed images (N, 3, 224, 224)
-        device : torch.device or str, optional
+
+        batch_size : int
 
         Returns 
         ------- 
         torch.Tensor
             Feature embeddings (N, D)
         """
-        # if data.get('inputs') is None:    
-        #     raise ValueError("'data' should be a dict with key 'inputs'")
-    
-        # raw_inputs = data.get('inputs')
         if self.model is None:
             raise RuntimeError("Model not loaded. Call load_model() first.")
         
-        inputs = self.preprocess(data)
+        all_inputs = self._preprocess(input) 
 
-        # 2. Device handling
-        device = kwargs.get("device") or self.device
-        self.model.to(device)
-        inputs = inputs.to(device)
+        # If model isn't on the given device, move it there
+        if next(self.model.parameters()).device != self.device:
+            self.model.to(self.device)
 
-        # 3. Inference
         self.model.eval()
-        with torch.no_grad():
-            features = self.model(inputs)
+        all_features = []
 
-        # 4. Handle Output: Move to CPU and convert to List for JSON serialization
-        # This is crucial for the Runner to send data back to the Proxy
-        return {'output': features.cpu().tolist()}
+        with torch.no_grad():
+            for i in tqdm.tqdm(range(0, len(all_inputs), batch_size)):
+                batch = all_inputs[i : i + batch_size].to(self.device)
+                features = self.model(batch)
+                all_features.append(features.cpu())
+
+        final_tensor = torch.cat(all_features, dim=0)
+
+        return {'output' : final_tensor.tolist()}
     
 if __name__=='__main__':
-    ...
+    db = DinoBloom()
+    
+    test_image = Image.new('RGB', (224, 224), color=(73, 109, 137))
+
+    db.load_model(model="s", device="cpu")
+    result = db.transform(data=test_image)
+    print(result)
+    batch_result = db.transform(data=[test_image] * 5)
+    print(batch_result)

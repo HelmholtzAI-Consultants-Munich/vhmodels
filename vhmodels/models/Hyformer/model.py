@@ -1,8 +1,5 @@
 from vhmodels.vh_checker.base import BaseModel
-from pathlib import Path
-
-import torch
-from huggingface_hub import hf_hub_download
+from vhmodels.utils.paths import get_model_cache_dir
 
 from hyformer.models.auto import AutoModel
 from hyformer.models.base import Encoder
@@ -12,15 +9,16 @@ from hyformer.configs.tokenizer import TokenizerConfig
 from hyformer.configs.model import ModelConfig
 from hyformer.utils.tokenizers.base import BaseTokenizer
 
+import json
+import torch
+from huggingface_hub import hf_hub_download 
+
 class Hyformer(
     BaseModel,
-    project="hyformer",
-    description="A joint transformer-based model that unifies a generative decoder with a predictive encoder", 
-    link="https://huggingface.co/collections/virtual-human-chc/hyformer"                       
-):
-    
-    SEED = 1337
-    set_seed(SEED)
+    #project="hyformer",
+    #description="A joint transformer-based model that unifies a generative decoder with a predictive encoder", 
+    #link="https://huggingface.co/collections/virtual-human-chc/hyformer"                       
+):  
     def __init__(self):
         self.model_config = [
             "hyformer_molecules_50M",
@@ -34,9 +32,14 @@ class Hyformer(
         self.local = None
 
     def _download(self, repo_id, filename):
-        return hf_hub_download(repo_id=repo_id, filename=filename, local_dir=self.local)
+        return hf_hub_download(
+            repo_id=repo_id, 
+            filename=filename, 
+            local_dir=str(self.local),
+            local_dir_use_symlinks=False
+        )
 
-    def load_model(self, model=None, **kwargs):
+    def load_model(self, model=None, seed=1337, **kwargs):
         """    
         Downloads and loads the artifacts for the specified model. The available models are: 
         - hyformer_molecules_50M 
@@ -52,14 +55,15 @@ class Hyformer(
         - ckpt.pt: weights of the model 
 
         For more information, check out (link to HF). 
-
+        
         Parameters
         -------- 
-        model: str 
+        model : torch.device or str, optional
             Name of the model 
         
-        device: str
+        device : str
 
+        seed : int
         
         Returns 
         ------- 
@@ -67,69 +71,79 @@ class Hyformer(
         """
         if model not in self.model_config:
             raise ValueError(
-                f"Unknown model '{self.model}' in DinoBloom. Available models: {list(self.model_config.keys())}"
+                f"Unknown model '{model}'. Available: {list(self.model_config)}"
             )
         
-        self.device = kwargs.get(
-            "device",
-            torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        )
+        set_seed(seed)
 
-        self.local = Path(f"virtual-human-chc/{self.model}")
+        self.device = torch.device(kwargs.get("device", "cuda" if torch.cuda.is_available() else "cpu"))
 
-        self._download(f"virtual-human-chc/{model}", "vocab.txt") 
+        # Use ~/.cache/vhmodels/weights/model_name
+        self.local = get_model_cache_dir(model)
+        repo_id = f"virtual-human-chc/{model}"
+
+        vocab_path = self._download(repo_id, "vocab.txt")
+        tok_config_path = self._download(repo_id, "tokenizer_config.json")
+
+        with open(tok_config_path, 'r') as f:
+            tok_config_data = json.load(f)
+        
+        # Inject the absolute path so the tokenizer finds vocab.txt in the cache
+        tok_config_data["path_to_vocabulary"] = str(vocab_path)
 
         self.tokenizer = AutoTokenizer.from_config(
-            TokenizerConfig.from_config_file(self._download(f"virtual-human-chc/{model}", "tokenizer_config.json"))
+            TokenizerConfig.from_dict(tok_config_data) 
         )
 
+        model_config_path = self._download(repo_id, "model_config.json")
+        
         self.model = AutoModel.from_config(
-            ModelConfig.from_config_file(self._download(f"virtual-human-chc/{model}", "model_config.json"))
+            ModelConfig.from_config_file(model_config_path)
         )
 
-        self.model.load_pretrained(self._download(f"virtual-human-chc/{model}", "ckpt.pt"))
+        ckpt_path = self._download(repo_id, "ckpt.pt")
+        self.model.load_pretrained(ckpt_path)
+        
         self.model.to(self.device)
-        model.eval()
+        self.model.eval()
     
-    def preprocess(self, data):
-        ...
+    def _preprocess(self, input):
+        return input
     
-    def transform(self, data, **kwargs):
+    def transform(self, input, batch_size=128, **kwargs):
         """
         Creates embeddings for the provided input. 
         The function expects the tokenizer and the model to be loaded already. 
 
         Parameters 
         ---------- 
-        inputs : str 
+        input : str 
             Path to the raw data file containing molecular representations. 
 
         batch_size : int 
             Size of the batch 
 
-        device: str 
-            Device used 
-
         Returns 
         ------- 
         numpy.ndarray 
             Embeddings of the input data 
-
-        Example
-        -------
-        {'output': [[0.12989292, -0.04472789, 1.27521825 ... -0.31017503, -2.61905527, -0.26748869] 
-        [ 0.04795801, -0.71846646, 3.47797537 ...  2.37488675, -0.28063831, 1.84492266] 
-        [-0.00499679, 0.72711295, 0.48343059 ... -1.17737067, 0.93289232, 0.32299849]]} 
         """
         if self.model is None:
             raise RuntimeError("Model not loaded. Call load_model() first.")
         
-        inputs = self.preprocess(data)
+        inputs = self._preprocess(input)
 
-        featurizer = self.model.to_encoder(self.tokenizer, 128, self.device) # batch_size=128
+        featurizer = self.model.to_encoder(self.tokenizer, batch_size, self.device) # batch_size=128
         embeddings = featurizer.encode(inputs)
         
-        return {'output': embeddings} 
+        return {'output' : embeddings.tolist()}
     
 if __name__=='__main__':
-    ...
+    model = Hyformer()
+    model.load_model('hyformer_molecules_50M')
+    results = model.transform(inputs=[
+        'CCCOc1cccc(-c2nn(-c3ccccc3)cc2/C=C(/C#N)C2=[N+]c3ccccc3[N-]2)c1 O=C(c1ccccc1)c1cc([N+](=O)O)c(Sc2c([N+](=O)O)cc([N+](=O)O)cc2[N+](=O)O)cc1[N+](=O)O', 
+        'Nc1ncc(CN2CCC3(CC2)C[C@H](c2ccccc2)CN(C2CC2)C3)cn1 O=C(c1ccco1)N(Cc1ccccc1Cl)C[C@@H]1CC(c2ccc(Cl)o2)=NO1',
+        'O=C(c1cccc(/N=C(\O)CCc2ccccc2)c1)[N+]1CCCCC1'
+    ])
+    print(results)

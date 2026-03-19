@@ -1,11 +1,10 @@
+from vhmodels.vh_checker.base import BaseModel
+
 import argparse
 import json
 import sys
 from pathlib import Path
-
-# We import vhmodels to trigger model discovery 
-# so that BaseModel._registry is populated.
-from vhmodels.vh_checker.base import BaseModel
+import pandas as pd
 
 current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent.parent # Goes up to the folder containing 'vhmodels'
@@ -18,15 +17,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", required=True, help="ID of the project to run")
     parser.add_argument("--model", required=True, help="Exact model in the project")
-    parser.add_argument("--data", required=True, help="Input data as a JSON string")
+    parser.add_argument("--input", required=True, help="Input data as a JSON string")
     args = parser.parse_args()
 
-    # 1. Fetch the real model class from the registry
-    if args.project not in BaseModel._registry:
-        print(f"Error: Project '{args.project}' not found in registry.", file=sys.stderr)
-        sys.exit(1)
-
-    model_cls = BaseModel._registry[args.project]
+    model_cls = BaseModel.get_class(args.project)
 
     try:
         # 2. Instantiate and call load_model (this happens inside the sub-env)
@@ -34,11 +28,12 @@ def main():
         instance.load_model(args.model)
 
         # 3. Parse data and execute transformation
-        input_data = json.loads(args.data)
-        result = instance.transform(input_data)
+        result = instance.transform(args.input)
 
         # 4. Output the result to STDOUT as JSON
-        # The Proxy catches this output.
+        # The Proxy catches this output.if isinstance(result, pd.DataFrame):
+        result['output'].to_dict(orient="records")
+        
         print(json.dumps(result))
 
     except Exception as e:

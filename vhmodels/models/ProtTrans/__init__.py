@@ -1,1 +1,1 @@
-from .model import ProtTrans
+#from .model import ProtTrans

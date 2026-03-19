@@ -1,27 +1,38 @@
 from abc import ABC, abstractmethod
+import sys
+import os
+import importlib
+
+REGISTRY = {
+    "dinobloom": "DinoBloom.model.DinoBloom",
+    "hyformer": "Hyformer.model.Hyformer",
+    "mole": "MolE.model.MolE",
+    "prottrans": "ProtTrans.model.ProtTrans"
+}
 
 class BaseModel(ABC):
-    _registry = {}
+    
+    @staticmethod
+    def get_class(_class):
+        class_path = REGISTRY[_class]
 
-    def __init_subclass__(cls, project=None, description=None, link=None, env_name=None, **kwargs):
-        super().__init_subclass__(**kwargs)
-        # Only register concrete classes that provide a 'name'
-        if project:
-            cls.project = project
-            # Consistent prefixing helps avoid collisions with other conda envs
-            cls.env_name = env_name or f"vhmodels-{project}"
-            cls.description = description or "No description provided."
-            cls.link = link
-            BaseModel._registry[project] = cls
+        # Determine the absolute path to your 'models' directory
+        # Adjust '..' based on where runner.py sits relative to the models
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        models_dir = os.path.join(current_dir, "..", "models") # Example path
+        
+        if models_dir not in sys.path:
+            sys.path.insert(0, models_dir)
 
-    @classmethod
-    def list_available_models(cls):
-        """Returns metadata for all discovered models."""
-        return [
-            {"id": k, "project": v.project, "desc": v.description, "link": v.link} 
-            for k, v in cls._registry.items()
-        ]
-
+        try:
+            # Now Python can see 'DinoBloom' inside the models folder
+            module_path, class_name = class_path.rsplit(".", 1)
+            module = importlib.import_module(module_path)
+            return getattr(module, class_name)
+        except (ImportError, AttributeError) as e:
+            print(f"Error loading class {class_path}: {e}", file=sys.stderr)
+            sys.exit(1)
+    
     @abstractmethod
     def load_model(self, model, **kwargs):
         pass

@@ -1,7 +1,0 @@
-Metadata-Version: 2.4
-Name: vhmodels
-Version: 0.1.0
-Summary: Virtual Human CHC Model Zoo
-Requires-Dist: click
-Requires-Dist: pyyaml
-Requires-Dist: tabulate
