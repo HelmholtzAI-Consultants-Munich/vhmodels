@@ -16,7 +16,7 @@ if str(project_root) not in sys.path:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", required=True, help="ID of the project to run")
-    parser.add_argument("--model", required=True, help="Exact model in the project")
+    parser.add_argument("--model", required=False, help="Exact model in the project")
     parser.add_argument("--input", required=True, help="Input data as a JSON string")
     args = parser.parse_args()
 
@@ -30,10 +30,12 @@ def main():
         # 3. Parse data and execute transformation
         result = instance.transform(args.input)
 
-        # 4. Output the result to STDOUT as JSON
-        # The Proxy catches this output.if isinstance(result, pd.DataFrame):
-        result['output'].to_dict(orient="records")
+        # Remove this later
+        if isinstance(result['output'], pd.DataFrame):
+            result['output'].to_dict(orient="records")
         
+        # 4. Output the result to STDOUT as JSON
+        # The Proxy catches this output.
         print(json.dumps(result))
 
     except Exception as e:

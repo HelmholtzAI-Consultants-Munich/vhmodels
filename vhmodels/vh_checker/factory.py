@@ -1,4 +1,6 @@
-from .base import REGISTRY
+#from .base import REGISTRY
+from vhmodels.registry import MODEL_REGISTRY
+from vhmodels.vh_checker.base import BaseModel
 
 import os
 import json
@@ -7,20 +9,24 @@ from pathlib import Path
 import re
 import pandas as pd
 
-project_root = str(Path(__file__).parent.parent.parent.resolve())
-
-# 2. Setup environment variables for the subprocess
-# This tells the Conda environment where to find the 'vhmodels' folder
+current_file_path = os.path.abspath(__file__)
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file_path)))
 env = os.environ.copy()
 env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
 
 class ModelProxy:
-    def __init__(self, project, env_name, model=None):
+    def __init__(self, project, env_name, model=None, runtime='conda'):
         self.project = project
         self.model = model
+        self.runtime = runtime
         self.env_name = env_name
+    
+    def _env_exists(self):
+        # A quick way to check if a conda env exists
+        result = subprocess.run(["conda", "env", "list"], capture_output=True, text=True)
+        return self.env_name in result.stdout
 
-    def transform(self, input, **kwargs):
+    def transform(self, input, runtime='conda', **kwargs):
         if not self._env_exists():
             raise RuntimeError(
                 f"The environment '{self.env_name}' does not exist. "
@@ -31,24 +37,51 @@ class ModelProxy:
         # It's a file path; pass the path string directly
             input = input
         elif isinstance(input, pd.DataFrame):
-            input.to_dict(orient="records")
+            
+            input = json.dumps(input.to_dict(orient="records"))
         else:
             # It's a list or dictionary; serialize to JSON string
             input = json.dumps(input)
         
-        # We point to the runner inside vh_checker
-        cmd = [
-            "conda", "run", "-n", self.env_name,
-            "python", "-m", "vhmodels.vh_checker.runner",
-            "--project", self.project,
-            "--input", input
-        ]
+        # Run using conda env
+        if self.runtime == 'conda':
+            # We point to the runner inside vh_checker
+            cmd = [
+                "conda", "run", "-n", self.env_name,
+                "python", "-m", "vhmodels.vh_checker.runner",
+                "--project", self.project,
+                "--input", input
+            ]
 
+        elif self.runtime == 'docker':
+            cmd = [
+                "docker", "run", "--rm",
+                #"-v", f"{os.getcwd()}:/app",
+                f"vhmodels-{self.project}",
+                "micromamba", "run", "-n", f"vhmodels-{self.project}",
+                "python", "-m", "vhmodels.vh_checker.runner",
+                "--project", self.project,
+                "--input", input
+            ]
+        elif self.runtime == 'singularity':
+            raise NotImplementedError("Singularity not implemented yet!")
+        else:
+            raise RuntimeError(
+                f"Unsupported runtime: '{runtime}'"
+                f"Supported environments: conda, docker, singularity."
+            )
+        
         if hasattr(self, 'model') and self.model:
-            cmd.extend(["--model", self.model])
+                cmd.extend(["--model", self.model])
 
         try:
-            result = subprocess.run(cmd, text=True, check=True)
+            result = subprocess.run(cmd, 
+                                    env=env, 
+                                    capture_output=True, 
+                                    text=True, 
+                                    encoding="utf-8",  # <-- add this
+                                    errors="replace",  # <-- optional, replaces undecodable bytes with �
+                                    check=True)
             raw_output = result.stdout.strip()
 
             match = re.search(r'(\{.*\}|\[.*\])', raw_output, re.DOTALL)
@@ -64,24 +97,18 @@ class ModelProxy:
             print(f"Subprocess Error:\n{e.stderr}", file=os.sys.stderr)
             raise
 
-    def _env_exists(self):
-        # A quick way to check if a conda env exists
-        result = subprocess.run(["conda", "env", "list"], capture_output=True, text=True)
-        return self.env_name in result.stdout
-
-def load_model(project, model=None):
-    if project not in REGISTRY.keys():
+def load_model(project, model=None, runtime='conda'):
+    if project not in list(MODEL_REGISTRY.keys()):
         raise ValueError(f"Model '{project}' not found.")
 
-    #model_cls = BaseModel.get_class(project)
-    #current_env = os.environ.get("CONDA_DEFAULT_ENV")
+    # model = MODEL_REGISTRY[project]
+    # current_env = os.environ.get("CONDA_DEFAULT_ENV")
 
-    # If already in the right env, return real instance
-    # if current_env == model_cls.env_name:
-    #     instance = model_cls()
+    # # If already in the right env, return real instance
+    # if current_env == model['conda_env']:
+    #     instance = BaseModel.get_class(project)
     #     instance.load_model(project, model)
     #     return instance
     
     # Otherwise, return the Proxy
-    env_name = 'vhmodels-'+project
-    return ModelProxy(project, env_name, model)
+    return ModelProxy(project=project, env_name='vhmodels-'+project, model=model, runtime=runtime)

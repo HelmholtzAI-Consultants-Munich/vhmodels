@@ -1,0 +1,7 @@
+{
+    "name": "hyformer",
+    "conda_env": "vhmodels-hyformer",
+    "class_path": "Hyformer.model.Hyformer",
+    "description": "A joint transformer-based model that unifies a generative decoder with a predictive encoder", 
+    "link": "https://huggingface.co/collections/virtual-human-chc/hyformer" 
+}

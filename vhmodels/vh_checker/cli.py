@@ -1,21 +1,44 @@
+from vhmodels.vh_checker.base import BaseModel
+from vhmodels.registry import MODEL_REGISTRY
+
 import click
 import subprocess
 import os
 import json
 from pathlib import Path
-from vhmodels.vh_checker.base import BaseModel
-from vhmodels.vh_checker.base import REGISTRY
+import io
+import tarfile
+import platform
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
 
 @click.group()
 def main():
     """vhmodels: Manage and run isolated genomic models."""
     pass
 
+console = Console()
+
 @main.command()
 def list():
     """Display all registered models and their descriptions."""
-    # !!! Implement later
 
+    table = Table(title="Available models", header_style="bold magenta", border_style="bright_black")
+    
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Model Name", style="bold green")
+    table.add_column("Description", style="white")
+
+    for i, (name, desc) in enumerate(MODEL_REGISTRY.items(), 1):
+        table.add_row(str(i), name, desc['description'])
+
+    console.print(table)
+
+    # # !!! Implement later
+    # for model in MODEL_REGISTRY.keys():
+    #     click.echo(f"Name: {model}")
+    #     click.echo(f"Description: {MODEL_REGISTRY[model]}")
 
     #models = BaseModel.list_available_models()
     # if not models:
@@ -41,11 +64,32 @@ def list():
     #     # but for now, simple strings are cleaner:
     #     click.echo("-" * 60)
 
+def _check_conda_installed():
+    """Check if Conda is available"""
+    try:
+        subprocess.run(
+            ["conda", "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+        return True
+    except FileNotFoundError:
+        click.echo("Error: Conda is not installed or not found in PATH.")
+        return False
+    except subprocess.CalledProcessError:
+        click.echo("Error: Conda is installed but returned an error. Check your Conda installation.")
+        return False
+
 @main.command()
 @click.argument('project')
 def create_env(project):
     """Create a Conda environment for a specific model."""
-    if project not in REGISTRY.keys():
+     # Check if Conda is installed 
+    if not _check_conda_installed():
+        return
+
+    if project not in MODEL_REGISTRY.keys():
         click.echo(f"Error: Model '{project}' is not registered.")
         return
 
@@ -61,10 +105,10 @@ def create_env(project):
         click.echo(f"Error: Could not find directory for project {project}")
         return
 
-    env_file = target_dir / "environment.yaml"
+    env_file = target_dir / "environment.yml"
     
     if not env_file.exists():
-        click.echo(f"Error: environment.yaml not found at {env_file}")
+        click.echo(f"Error: environment.yml not found at {env_file}")
         return
 
     click.echo(f"Creating environment '{env_name}'...")
@@ -73,6 +117,89 @@ def create_env(project):
         click.echo(f"Successfully created {env_name}.")
     except subprocess.CalledProcessError:
         click.echo("Failed to create environment. Ensure Conda is installed and functional.")
+
+def _check_docker_installed():
+    """Check if Docker is installed and in PATH."""
+    try:
+        subprocess.run(
+            ["docker", "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+        return True
+    except FileNotFoundError:
+        click.echo("Error: Docker is not installed or not found in PATH.")
+        return False
+    except subprocess.CalledProcessError:
+        click.echo("Error: Docker is installed but returned an error. Check your Docker installation.")
+        return False
+
+@main.command()
+@click.argument('project')
+def create_docker_image(project):
+    """Build Docker image dynamically in-memory for a specific project."""
+
+    # Docker check
+    if not _check_docker_installed():
+        return 
+
+    image_name = f"vhmodels-{project}"
+    project_root = Path(__file__).parent.parent.parent
+
+    # Paths
+    dockerfile_template_path = project_root / "vhmodels" / "envs" / "Dockerfile"
+    env_yml_path = project_root / "vhmodels" / "models" / project / "environment.yml"
+
+    if not dockerfile_template_path.exists() or not env_yml_path.exists():
+        click.echo("Dockerfile template or environment.yml not found.")
+        return
+
+    # Read Dockerfile template
+    dockerfile_str = dockerfile_template_path.read_text()
+    dockerfile_str = dockerfile_str.replace("{project}", project)
+
+    # Create in-memory tar context
+    context = io.BytesIO()
+    with tarfile.open(fileobj=context, mode="w") as tar:
+        # Add Dockerfile
+        df_bytes = dockerfile_str.encode("utf-8")
+        df_info = tarfile.TarInfo(name="Dockerfile")
+        df_info.size = len(df_bytes)
+        tar.addfile(df_info, io.BytesIO(df_bytes))
+
+        # Add environment.yml at root
+        env_bytes = env_yml_path.read_bytes()
+        env_info = tarfile.TarInfo(name="environment.yml")
+        env_info.size = len(env_bytes)
+        tar.addfile(env_info, io.BytesIO(env_bytes))
+
+        # Add all other project files
+        for path in project_root.rglob("*"):
+            if path.is_file() and not path.name.startswith(".") and "vhmodels.egg-info" not in path.parts:
+                arcname = path.relative_to(project_root)
+                tar.add(str(path), arcname=str(arcname))
+
+    context.seek(0)
+
+    # Build the image
+    try:
+        subprocess.run(
+            ["docker", "build", "-t", image_name, "-"],
+            input=context.read(),
+            check=True,
+            text=False
+        )
+        click.echo(f"Successfully created Docker image '{image_name}'.")
+    except subprocess.CalledProcessError as e:
+        click.echo("Failed to build Docker image.")
+        click.echo(e.stderr)
+
+@main.command()
+@click.argument('project')
+def create_singularity_image(project):
+    """Create Singularity image for a specific model."""
+    ...
 
 @main.command()
 @click.argument('model_id')

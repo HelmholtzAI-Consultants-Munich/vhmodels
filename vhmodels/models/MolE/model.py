@@ -57,7 +57,7 @@ class MolE(
         ------- 
         dict
         """ 
-        ## !! Refine the functions in the MolE package, so they don't return DF
+        ## !! Refine the functions in the MolE package, so they don't return
         smiles_tsv = input
         smiles_df = mole_representation.read_smiles(smiles_tsv, "smiles", "chem_name")
         emb = dataset_representation.batch_representation(smiles_df, self.model, "smiles", "chem_name", device=self.device)

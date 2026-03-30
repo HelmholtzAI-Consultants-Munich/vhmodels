@@ -2,19 +2,20 @@ from abc import ABC, abstractmethod
 import sys
 import os
 import importlib
+from vhmodels.registry import MODEL_REGISTRY
 
-REGISTRY = {
-    "dinobloom": "DinoBloom.model.DinoBloom",
-    "hyformer": "Hyformer.model.Hyformer",
-    "mole": "MolE.model.MolE",
-    "prottrans": "ProtTrans.model.ProtTrans"
-}
+# REGISTRY = {
+#     "dinobloom": "DinoBloom.model.DinoBloom",
+#     "hyformer": "Hyformer.model.Hyformer",
+#     "mole": "MolE.model.MolE",
+#     "prottrans": "ProtTrans.model.ProtTrans"
+# }
 
 class BaseModel(ABC):
     
     @staticmethod
     def get_class(_class):
-        class_path = REGISTRY[_class]
+        class_path = MODEL_REGISTRY[_class]['class_path']
 
         # Determine the absolute path to your 'models' directory
         # Adjust '..' based on where runner.py sits relative to the models
@@ -38,6 +39,6 @@ class BaseModel(ABC):
         pass
     
     @abstractmethod
-    def transform(self, data, **kwargs):
+    def transform(self, input, **kwargs):
         pass
     

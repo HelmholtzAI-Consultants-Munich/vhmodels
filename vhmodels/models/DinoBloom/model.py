@@ -1,8 +1,8 @@
 from vhmodels.vh_checker.base import BaseModel
+
 from huggingface_hub import hf_hub_download
 import torch
 import torch.nn as nn
-import tqdm
 from torchvision import transforms
 from pathlib import Path
 from PIL import Image
@@ -109,7 +109,6 @@ class DinoBloom(
         
         # inputs = data.get('inputs', None)
         
-
         images = []
 
         # convert Path objects
@@ -186,7 +185,7 @@ class DinoBloom(
         all_features = []
 
         with torch.no_grad():
-            for i in tqdm.tqdm(range(0, len(all_inputs), batch_size)):
+            for i in range(0, len(all_inputs), batch_size):
                 batch = all_inputs[i : i + batch_size].to(self.device)
                 features = self.model(batch)
                 all_features.append(features.cpu())

@@ -5,9 +5,9 @@ import re
 
 class ProtTrans(
     BaseModel,
-    project="prottrans",
-    description="State of the art pre-trained models for proteins", 
-    link="https://huggingface.co/virtual-human-chc/prot_t5_xl_uniref50"                       
+    #project="prottrans",
+    #description="State of the art pre-trained models for proteins", 
+    #link="https://huggingface.co/virtual-human-chc/prot_t5_xl_uniref50"                       
 ):
 
     def __init__(self):
