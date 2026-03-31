@@ -1,4 +1,6 @@
-import os
+# For Hyformer, one should choose where to download the model. I didn't want to let the user do this manually,
+# so decided to sae the model in the standard folder .cache (where all HuggingFace models are usually stored).
+
 from pathlib import Path
 
 # Create ~/.cache/vhmodels

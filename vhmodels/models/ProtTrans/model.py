@@ -1,5 +1,13 @@
 from vhmodels.vh_checker.base import BaseModel
-from transformers import T5Tokenizer, T5EncoderModel
+
+from transformers import T5EncoderModel, T5Tokenizer 
+from transformers import AlbertModel, AlbertTokenizer
+from transformers import BertModel, BertTokenizer
+from transformers import TFT5EncoderModel, T5Tokenizer
+from transformers import XLNetModel, XLNetTokenizer
+
+
+
 import torch
 import re
 
@@ -54,23 +62,44 @@ class ProtTrans(
         ------- 
         None  
         """
-        if model == "prot_t5_xl_uniref50":
-            self.device = kwargs.get(
-                "device",
-                torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(
+            kwargs.get("device", "cuda" if torch.cuda.is_available() else "cpu")
+        )
+
+        model_name = f"virtual-human-chc/{model}"
+
+        model_specs = {
+            "prot_t5_xl_uniref50": (T5Tokenizer, T5EncoderModel),
+            "prot_t5_xl_bfd": (T5Tokenizer, T5EncoderModel),
+            "prot_bert_bfd": (BertTokenizer, BertModel),
+            "prot_bert": (BertTokenizer, BertModel),
+            "prot_albert": (AlbertTokenizer, AlbertModel),
+            "prot_xlnet": (XLNetTokenizer, XLNetModel),
+        }
+
+        if model not in model_specs:
+            raise ValueError(
+                f"Unsupported model '{model}'. "
+                f"Supported models: {', '.join(model_specs.keys())}"
             )
 
-            # Load the tokenizer
-            self.tokenizer = T5Tokenizer.from_pretrained(f'virtual-human-chc/{model}', do_lower_case=False)
+        tokenizer_cls, model_cls = model_specs[model]
 
-            # Load the model
-            self.model = T5EncoderModel.from_pretrained(f'virtual-human-chc/{model}').to(self.device)
-      
-            # only GPUs support half-precision currently; if you want to run on CPU use full-precision (not recommended, much slower)
-            if self.device == torch.device("cpu"):
-                self.model.to(torch.float32)
+        self.tokenizer = tokenizer_cls.from_pretrained(model_name, do_lower_case=False)
+
+        # Some checkpoints may need from_pt=True depending on the upstream format.
+        # Use it only where required.
+        if model in {"prot_bert_bfd", "prot_bert", "prot_t5_xl_bfd"}:
+            self.model = model_cls.from_pretrained(model_name, from_pt=True)
         else:
-            ... # implement for other models
+            self.model = model_cls.from_pretrained(model_name)
+
+        self.model = self.model.to(self.device)
+
+        if self.device.type == "cpu":
+            self.model = self.model.to(torch.float32)
+
+        self.model.eval()
         
     def _preprocess(self, input):
         """
@@ -116,7 +145,13 @@ class ProtTrans(
         with torch.no_grad():
             embedding_repr = self.model(input_ids=input_ids, attention_mask=attention_mask)
         
-        return {'output': embedding_repr}
+        return {'output': embedding_repr.last_hidden_state.tolist()}
     
 if __name__=='__main__':
-    ...
+    model = ProtTrans()
+    model.load_model('prot_t5_xl_uniref50')
+    result = model.transform(input=[
+        "PRTEINO", "SEQWENCE"
+    ])
+
+    print(result)

@@ -1,3 +1,4 @@
+# The file contains the function to run the model with given input
 from vhmodels.vh_checker.base import BaseModel
 
 import argparse

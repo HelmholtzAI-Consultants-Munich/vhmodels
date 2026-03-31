@@ -10,7 +10,9 @@ dependencies = [
     "click",
     "pyyaml",
     "tabulate",
-    "rich"
+    "rich",
+    "pandas",
+    "pytest"
 ]
 
 [project.scripts]

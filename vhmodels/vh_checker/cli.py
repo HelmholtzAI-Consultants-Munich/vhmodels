@@ -1,3 +1,7 @@
+# This file contains all the CLI functions available through the CLI (try vh-checker <command> <project_name>)
+# With the CLI, one can list all available models 
+# and create conda envs, Docker images and Apptainer images for the models
+
 from vhmodels.vh_checker.base import BaseModel
 from vhmodels.registry import MODEL_REGISTRY
 
@@ -12,6 +16,9 @@ import platform
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from pathlib import Path
+import tempfile
+import shutil
 
 @click.group()
 def main():
@@ -34,35 +41,6 @@ def list():
         table.add_row(str(i), name, desc['description'])
 
     console.print(table)
-
-    # # !!! Implement later
-    # for model in MODEL_REGISTRY.keys():
-    #     click.echo(f"Name: {model}")
-    #     click.echo(f"Description: {MODEL_REGISTRY[model]}")
-
-    #models = BaseModel.list_available_models()
-    # if not models:
-    #     click.echo("No models found. Ensure models are correctly registered in vhmodels/models/")
-    #     return
-
-    # click.echo(f"{'Model ID':<15} | {'Description'}")
-    # click.echo("-" * 60)
-
-    # for m in models:
-    #      click.echo(f"{m['id']:<15} | {m['desc']}")
-
-    # for m in models:
-    #     # Use click.style to make the ID stand out
-    #     model_id = click.style(m['id'], fg="cyan", bold=True)
-    #     click.echo(f"ID: {model_id}")
-        
-    #     # Nicely indent the metadata
-    #     click.echo(f"  Description : {m['desc']}")
-    #     click.echo(f"  HF Link     : {m.get('link', 'N/A')}")
-        
-    #     # We can use pprint for just the complex bits if they exist, 
-    #     # but for now, simple strings are cleaner:
-    #     click.echo("-" * 60)
 
 def _check_conda_installed():
     """Check if Conda is available"""
@@ -194,15 +172,158 @@ def create_docker_image(project):
     except subprocess.CalledProcessError as e:
         click.echo("Failed to build Docker image.")
         click.echo(e.stderr)
+        
+def _check_apptainer_installed():
+    try:
+        subprocess.run(["apptainer", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    return False
+
+# @main.command()
+# @click.argument("project")
+# @click.option("--build/--no-build", default=True, help="Build the .sif image after creating the definition file.")
+# @click.option("--fakeroot/--no-fakeroot", default=True, help="Use --fakeroot for apptainer build.")
+# def create_apptainer_image(project, build, fakeroot):
+#     """Create Apptainer image for a specific model."""
+#     if not _check_apptainer_installed():
+#         click.echo("Apptainer/Singularity not found.")
+#         return
+
+#     image_name = f"vhmodels-{project}.sif"
+#     project_root = Path(__file__).parent.parent.parent.resolve()
+
+#     singularity_template_path = project_root / "vhmodels" / "envs" / "Singularity"
+#     env_yml_path = project_root / "vhmodels" / "models" / project / "environment.yml"
+
+#     if not singularity_template_path.exists or  not env_yml_path.exists():
+#         click.echo(f"Singularity file or environment.yml not found: {env_yml_path}")
+#         return
+    
+#     singularity_str = singularity_template_path.read_text()
+#     singularity_str = singularity_str.replace("{project}", project)
+
+#     with tempfile.TemporaryDirectory() as tmpdir:
+#         tmpdir = Path(tmpdir)
+
+#         # Stage only the repository content into a build context directory.
+#         context_dir = tmpdir / "context"
+#         shutil.copytree(
+#             project_root,
+#             context_dir,
+#             ignore=shutil.ignore_patterns(
+#                 ".git",
+#                 "__pycache__",
+#                 "*.pyc",
+#                 "*.pyo",
+#                 "*.egg-info",
+#                 ".pytest_cache",
+#                 "build",
+#                 "dist",
+#                 ".venv",
+#                 ".mypy_cache",
+#             ),
+#         )
+
+#         def_path = tmpdir / f"vhmodels-{project}.def"
+#         def_path.write_text(singularity_str)
+
+#         click.echo(f"Definition file written to: {def_path}")
+
+#         if not build:
+#             return
+
+#         build_cmd = ["apptainer", "build"]
+#         if fakeroot:
+#             build_cmd.append("--fakeroot")
+#         build_cmd.extend([str(tmpdir / image_name), str(def_path)])
+
+#         try:
+#             subprocess.run(
+#                 build_cmd,
+#                 cwd=tmpdir,
+#                 check=True,
+#             )
+#             click.echo(f"Successfully created Apptainer image '{tmpdir / image_name}'.")
+#         except subprocess.CalledProcessError as e:
+#             click.echo("Failed to build Apptainer image.")
+#             click.echo(str(e))
 
 @main.command()
-@click.argument('project')
-def create_singularity_image(project):
-    """Create Singularity image for a specific model."""
-    ...
+@click.argument("project")
+@click.option("--build/--no-build", default=True, help="Build the .sif image after creating the definition file.")
+@click.option("--fakeroot/--no-fakeroot", default=True, help="Use --fakeroot for apptainer build.")
+def create_apptainer_image(project, build, fakeroot):
+    """Create Apptainer image for a specific model."""
+    if not _check_apptainer_installed():
+        click.echo("Apptainer/Singularity not found.")
+        return
+
+    image_name = f"vhmodels-{project}.sif"
+    project_root = Path(__file__).parent.parent.parent.resolve()
+
+    # Use the template in "envs" folder
+    singularity_template_path = project_root / "vhmodels" / "envs" / "Singularity"
+    # Use the conda environment of the given project
+    env_yml_path = project_root / "vhmodels" / "models" / project / "environment.yml"
+
+    if not singularity_template_path.exists() or not env_yml_path.exists():
+        click.echo(f"Singularity file or environment.yml not found: {env_yml_path}")
+        return
+
+    singularity_str = singularity_template_path.read_text()
+    singularity_str = singularity_str.replace("{project}", project)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+
+        context_dir = tmpdir / "context"
+        shutil.copytree(
+            project_root,
+            context_dir,
+            ignore=shutil.ignore_patterns(
+                ".git",
+                "__pycache__",
+                "*.pyc",
+                "*.pyo",
+                "*.egg-info",
+                ".pytest_cache",
+                "build",
+                "dist",
+                ".venv",
+                ".mypy_cache",
+            ),
+        )
+
+        def_path = tmpdir / f"vhmodels-{project}.def"
+        def_path.write_text(singularity_str)
+        click.echo(f"Definition file written to: {def_path}")
+
+        if not build:
+            return
+
+        build_cmd = ["apptainer", "build"]
+        if fakeroot:
+            build_cmd.append("--fakeroot")
+
+        image_path = tmpdir / image_name
+        build_cmd.extend([str(image_path), str(def_path)])
+
+        try:
+            subprocess.run(
+                build_cmd,
+                cwd=tmpdir,
+                check=True,
+                text=True
+            )
+            click.echo(f"Successfully created Apptainer image '{image_path}'.")
+        except subprocess.CalledProcessError as e:
+            click.echo("Failed to build Apptainer image.")
+            click.echo(str(e))
 
 @main.command()
-@click.argument('model_id')
+@click.argument('model')
 @click.argument('data_json')
 def run(model_id, data_json):
     """Run a model directly from the CLI using a JSON string as input."""

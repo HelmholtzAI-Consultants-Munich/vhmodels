@@ -2,15 +2,8 @@
 
 This repository contains the package 'virtual-human-chc' (currently named vhmodels). Its goal is to unify and orchestrate multiple deep learning models developed at Helmholtz Munich - without tightly coupling or reimplementing them.
 
-* Each model remains independent, with its own environment and dependencies
-* The package provides a common interface to run them seamlessly
-
 ## Core concept
-Each model:
-
-* Lives in its own directory
-* Has its own Conda environment, Docker image, or Singularity image
-* Is executed via a subprocess
+Each model Lives in its own directory, has its own Conda environment, Docker image, or Singularity image and is executed via a subprocess.
 
 ## Folder structure
 ```

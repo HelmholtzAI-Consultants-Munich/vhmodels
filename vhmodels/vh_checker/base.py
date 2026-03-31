@@ -1,15 +1,10 @@
+# The file contains the interface, which each model will implement:
+# load_model, transform, predict, generate
 from abc import ABC, abstractmethod
 import sys
 import os
 import importlib
 from vhmodels.registry import MODEL_REGISTRY
-
-# REGISTRY = {
-#     "dinobloom": "DinoBloom.model.DinoBloom",
-#     "hyformer": "Hyformer.model.Hyformer",
-#     "mole": "MolE.model.MolE",
-#     "prottrans": "ProtTrans.model.ProtTrans"
-# }
 
 class BaseModel(ABC):
     
@@ -42,3 +37,10 @@ class BaseModel(ABC):
     def transform(self, input, **kwargs):
         pass
     
+    # @abstractmethod
+    # def predict(self, input, **kwargs):
+    #     pass
+
+    # @abstractmethod
+    # def generate(self, input, **kwargs):
+    #     pass
