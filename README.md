@@ -1,12 +1,60 @@
 # Virtual-Human-CHC
 
-This repository contains the package 'virtual-human-chc' (currently named vhmodels).
+This repository contains the package 'virtual-human-chc' (currently named vhmodels). Its goal is to unify and orchestrate multiple deep learning models developed at Helmholtz - without tightly coupling or reimplementing them.
 
-## Create a tree which explains the structure/folders in the package
+The key idea is simple:
+* Each model remains independent, with its own environment and dependencies
+* The package provides a common interface to run them seamlessly
 
-## How to install the package?
+## Core concept
+Each model:
 
-## How to use the CLI?
+* Lives in its own directory
+* Has its own Conda environment, Docker image, or Singularity image
+* Is executed via a subprocess
+
+## Folder structure
+```
+virtual_human_chc
+├───example_data # Example inputs/outputs (also available on HuggingFace)
+│   ├───DinoBloom
+│   └───MolE
+├───notebooks # Example notebooks demonstrating usage
+├───tests # Tests for core model functionality
+└───vhmodels
+    ├───envs # Templates for Docker and Singularity environments
+    ├───models # Model implementations + environments + metadata
+    │   ├───DinoBloom
+    │   ├───Hyformer
+    │   ├───MolE
+    │   └───ProtTrans
+    ├───utils # Utility functions
+    └───vh_checker # CLI + base model interface
+```
+
+## Installation
+
+From the root directory (```virtual_human_chc```), run:
+
+```
+pip install -e .
+```
+
+## CLI Usage
+
+### List available models:
+```vh-checker list```
+
+### Create ```conda``` environment:
+```vh-checker create-env <model_name>```
+
+Example: ```vh-checker create-env dinobloom```
+
+### Create ```Docker``` image:
+```vh-checker create-docker-image <model_name>```
+
+Example: ```vh-checker create-docker-image dinobloom```
+
 
 ## Quick start
 Simple examples how the models can be used.
@@ -58,10 +106,9 @@ results = model.transform(input='example_data/MolE/examples_molecules.tsv')
 print(results)
 ```
 
-## TODO
-1. Create folder 'notebooks' with Jupyter Notebooks showing how to use the package 
-2. Create Docker file (with miniconda or mamba/minimamba) and Singularity file 
-3. Create documentation (see Kipoi)
-4. Extend the package with other useful functions (predict, generate etc.)
-5. In the CLI, add option for the user to give you the path to the place where conda environments are stored. This will allow faster switches between environments
-6. Add the rest of the models
+## TODOs
+
+1. Implement MolE and ProtTrans (add also predict functions)
+2. Implement MolE and ProtTrans in the Docker and Singularity scheme
+3. Document everything
+4. In the CLI, add option for the user to give you the path to the place where conda environments are stored. This will allow faster switches between environments
