@@ -47,7 +47,7 @@ class ModelProxy:
             # We point to the runner inside vh_checker
             cmd = [
                 "conda", "run", "-n", self.env_name,
-                "python", "-m", "vhmodels.vh_checker.runner",
+                "python", "-m", "vhmodels.vh_checker.transform",
                 "--project", self.project,
                 "--input", input
             ]
@@ -58,7 +58,7 @@ class ModelProxy:
                 #"-v", f"{os.getcwd()}:/app",
                 f"vhmodels-{self.project}",
                 "micromamba", "run", "-n", f"vhmodels-{self.project}",
-                "python", "-m", "vhmodels.vh_checker.runner",
+                "python", "-m", "vhmodels.vh_checker.transform",
                 "--project", self.project,
                 "--input", input
             ]

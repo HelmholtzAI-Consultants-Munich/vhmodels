@@ -1,4 +1,4 @@
-# The file contains the function to run the model with given input
+# The file contains the necessary to run the function 'tranform' for the given model
 from vhmodels.vh_checker.base import BaseModel
 
 import argparse
@@ -30,10 +30,6 @@ def main():
 
         # 3. Parse data and execute transformation
         result = instance.transform(args.input)
-
-        # Remove this later
-        if isinstance(result['output'], pd.DataFrame):
-            result['output'].to_dict(orient="records")
         
         # 4. Output the result to STDOUT as JSON
         # The Proxy catches this output.

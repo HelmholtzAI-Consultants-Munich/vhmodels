@@ -100,7 +100,7 @@ print(results)
 
 ## TODOs
 
-1. Implement MolE and ProtTrans (add also predict functions)
-2. Implement MolE and ProtTrans in the Docker and Singularity scheme
-3. Document everything
-4. In the CLI, add option for the user to give you the path to the place where conda environments are stored. This will allow faster switches between environments
+1. Implement 'predict' for Mole and ProtTrans and 'generate' for ProtTrans. I thought that it could be best to implement the files in 'vh-checker' folders for the predict and generate function. I'm not sure if this is the best solution.
+2. Implement Apptainer image
+3. DinoBloom doesn't work when images are directly passed to the function, but it should (images can't be directly serilalized, but solutions are available)
+4. Implement test for the models in folder 'tests'

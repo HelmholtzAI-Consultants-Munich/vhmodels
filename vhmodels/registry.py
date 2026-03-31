@@ -42,4 +42,5 @@ def discover_models():
                 print(f"Warning: Failed to parse config for {item}")
                 
     return registry
+
 MODEL_REGISTRY = discover_models()
