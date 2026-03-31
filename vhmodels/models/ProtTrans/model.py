@@ -3,21 +3,13 @@ from vhmodels.vh_checker.base import BaseModel
 from transformers import T5EncoderModel, T5Tokenizer 
 from transformers import AlbertModel, AlbertTokenizer
 from transformers import BertModel, BertTokenizer
-from transformers import TFT5EncoderModel, T5Tokenizer
+from transformers import ElectraTokenizer, ElectraForPreTraining, ElectraForMaskedLM, ElectraModel
 from transformers import XLNetModel, XLNetTokenizer
-
-
 
 import torch
 import re
 
-class ProtTrans(
-    BaseModel,
-    #project="prottrans",
-    #description="State of the art pre-trained models for proteins", 
-    #link="https://huggingface.co/virtual-human-chc/prot_t5_xl_uniref50"                       
-):
-
+class ProtTrans(BaseModel):
     def __init__(self):
         self.available_models = [
             "prot_bert_bfd", 
@@ -70,6 +62,7 @@ class ProtTrans(
 
         model_specs = {
             "prot_t5_xl_uniref50": (T5Tokenizer, T5EncoderModel),
+	    "prot_t5_xxl_uniref50": (T5Tokenizer, T5EncoderModel),
             "prot_t5_xl_bfd": (T5Tokenizer, T5EncoderModel),
             "prot_bert_bfd": (BertTokenizer, BertModel),
             "prot_bert": (BertTokenizer, BertModel),
@@ -89,10 +82,7 @@ class ProtTrans(
 
         # Some checkpoints may need from_pt=True depending on the upstream format.
         # Use it only where required.
-        if model in {"prot_bert_bfd", "prot_bert", "prot_t5_xl_bfd"}:
-            self.model = model_cls.from_pretrained(model_name, from_pt=True)
-        else:
-            self.model = model_cls.from_pretrained(model_name)
+        self.model = model_cls.from_pretrained(model_name)
 
         self.model = self.model.to(self.device)
 
@@ -149,7 +139,7 @@ class ProtTrans(
     
 if __name__=='__main__':
     model = ProtTrans()
-    model.load_model('prot_t5_xl_uniref50')
+    model.load_model('prot_t5_xxl_uniref50')
     result = model.transform(input=[
         "PRTEINO", "SEQWENCE"
     ])
