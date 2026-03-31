@@ -1,4 +1,4 @@
-from vhmodels.vh_checker.base import BaseModel
+#from vhmodels.vh_checker.base import BaseModel
 import torch
 import yaml
 import pickle
@@ -7,7 +7,7 @@ from huggingface_hub import hf_hub_download
 from mole_package import ginet_concat, mole_antimicrobial_prediction, mole_representation, dataset_representation
 
 class MolE(
-    BaseModel,
+    #BaseModel,
     #project="mole",
     #description="MolE learns task-independent molecular representations of chemicals via Graph Isomorphism Networks (GINs)", 
     #link="https://huggingface.co/virtual-human-chc/MolE"                       
@@ -49,20 +49,21 @@ class MolE(
         ---------- 
         inputs : str 
             Path to the raw data file containing molecular representations. 
-            The file must contain two columns: 
-            - "chem_name": Name of the molecule 
-            - "smiles": SMILES representation of the molecule 
 
         Returns 
         ------- 
         dict
+            A dictionary containing:
+            - 'output': list of lists
         """ 
         ## !! Refine the functions in the MolE package, so they don't return
-        smiles_tsv = input
-        smiles_df = mole_representation.read_smiles(smiles_tsv, "smiles", "chem_name")
-        emb = dataset_representation.batch_representation(smiles_df, self.model, "smiles", "chem_name", device=self.device)
-        return {'output': emb}
+        smiles = mole_representation.read_smiles(input)
+        emb = dataset_representation.batch_representation(smiles_list=smiles, dl_model=self.model, device=self.device)
+        return {'output': emb.tolist()}
 
 if __name__=='__main__':
-    ...
+    model = MolE()
+    model.load_model()
+    result = model.transform("example_data/MolE/sequences.smiles")
+    print(result)
     

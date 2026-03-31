@@ -36,9 +36,9 @@ class ModelProxy:
         if isinstance(input, str) and os.path.exists(input):
         # It's a file path; pass the path string directly
             input = input
-        elif isinstance(input, pd.DataFrame):
+        # elif isinstance(input, pd.DataFrame):
             
-            input = json.dumps(input.to_dict(orient="records"))
+        #     input = json.dumps(input.to_dict(orient="records"))
         else:
             # It's a list or dictionary; serialize to JSON string
             input = json.dumps(input)

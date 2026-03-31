@@ -47,7 +47,7 @@ class DinoBloom(
             Version of the model 
         
         device : torch.device or str, optional
-            The device that should be used. Either "cuda" or "cpu"
+            The device that should be used. Either "cuda" or "cpu".
         
         Returns
         ------
@@ -162,15 +162,23 @@ class DinoBloom(
 
         Parameters
         -------
-        input : torch.Tensor
-            Preprocessed images (N, 3, 224, 224)
+        input : str | Path | PIL.Image | list
+            - Path to image
+            - Path to folder of images
+            - PIL image
+            - List of images or paths
 
-        batch_size : int
+        batch_size : int, optional (default=32)
+            Number of samples to process per batch.
+
+        **kwargs : dict, optional
+            Additional keyword arguments for compatibility or future extensions (currently unused).
 
         Returns 
         ------- 
-        torch.Tensor
-            Feature embeddings (N, D)
+        dict
+            A dictionary containing:
+            - 'output': list of lists
         """
         if self.model is None:
             raise RuntimeError("Model not loaded. Call load_model() first.")

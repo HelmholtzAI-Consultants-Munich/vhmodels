@@ -28,5 +28,5 @@ dependencies:
     - tensorflow==2.13.0
     - array_record==0.4.0
     - tfds-nightly==4.9.2.dev202308090034
-    - mole_package==0.1.2
+    - git+https://github.com/HelmholtzAI-Consultants-Munich/virtual_human_MolE.git@main#subdirectory=mole_package # the public pip installable package is older; don't used it
     - scikit-learn==1.7.2

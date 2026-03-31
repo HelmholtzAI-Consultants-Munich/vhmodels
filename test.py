@@ -24,11 +24,11 @@
 #     ])
 # print(results)
 
-import vhmodels
+# import vhmodels
 
-model = vhmodels.load_model(project='dinobloom', model='s', runtime='docker')
-result = model.transform(input='example_data/DinoBloom/001.bmp')
-print(result)
+# model = vhmodels.load_model(project='dinobloom', model='s')
+# result = model.transform(input='example_data/DinoBloom/001.bmp')
+# print(result)
 
 # import vhmodels
 
@@ -39,8 +39,8 @@ print(result)
 #     ])
 # print(results)
 
-# import vhmodels
+import vhmodels
 
-# model = vhmodels.load_model(project='mole')
-# results = model.transform(input='example_data/MolE/examples_molecules.tsv')
-# print(results)
+model = vhmodels.load_model(project='mole')
+results = model.transform(input='example_data/MolE/sequences.smiles')
+print(results)

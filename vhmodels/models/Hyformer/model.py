@@ -2,12 +2,10 @@ from vhmodels.vh_checker.base import BaseModel
 from vhmodels.utils.paths import get_model_cache_dir
 
 from hyformer.models.auto import AutoModel
-from hyformer.models.base import Encoder
 from hyformer.utils import set_seed
 from hyformer.utils.tokenizers.auto import AutoTokenizer
 from hyformer.configs.tokenizer import TokenizerConfig
 from hyformer.configs.model import ModelConfig
-from hyformer.utils.tokenizers.base import BaseTokenizer
 
 import json
 import torch
@@ -125,8 +123,9 @@ class Hyformer(
 
         Returns 
         ------- 
-        numpy.ndarray 
-            Embeddings of the input data 
+        dict
+            A dictionary containing:
+            - 'output': list of lists
         """
         if self.model is None:
             raise RuntimeError("Model not loaded. Call load_model() first.")

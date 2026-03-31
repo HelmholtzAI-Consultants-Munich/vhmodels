@@ -1,8 +1,7 @@
 # Virtual-Human-CHC
 
-This repository contains the package 'virtual-human-chc' (currently named vhmodels). Its goal is to unify and orchestrate multiple deep learning models developed at Helmholtz - without tightly coupling or reimplementing them.
+This repository contains the package 'virtual-human-chc' (currently named vhmodels). Its goal is to unify and orchestrate multiple deep learning models developed at Helmholtz Munich - without tightly coupling or reimplementing them.
 
-The key idea is simple:
 * Each model remains independent, with its own environment and dependencies
 * The package provides a common interface to run them seamlessly
 
@@ -57,7 +56,7 @@ Example: ```vh-checker create-docker-image dinobloom```
 
 
 ## Quick start
-Simple examples how the models can be used.
+Simple examples how the models can be used. To use the models, you should first create the corresponding ```conda```/```Docker``` environment.
 
 ### DinoBloom
 
@@ -102,7 +101,7 @@ print(results)
 import vhmodels
 
 model = vhmodels.load_model(project='mole')
-results = model.transform(input='example_data/MolE/examples_molecules.tsv')
+results = model.transform(input='example_data/MolE/sequences.smiles')
 print(results)
 ```
 

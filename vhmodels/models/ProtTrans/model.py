@@ -99,8 +99,9 @@ class ProtTrans(
 
         Returns
         ---------- 
-        numpy.ndarray 
-            Embeddings of the input data 
+        dict
+            A dictionary containing:
+            - 'output': list of lists
         """
         if self.model is None:
             raise RuntimeError("Model not loaded. Call load_model() first.")
