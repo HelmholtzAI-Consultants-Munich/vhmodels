@@ -11,12 +11,7 @@ import json
 import torch
 from huggingface_hub import hf_hub_download 
 
-class Hyformer(
-    BaseModel,
-    #project="hyformer",
-    #description="A joint transformer-based model that unifies a generative decoder with a predictive encoder", 
-    #link="https://huggingface.co/collections/virtual-human-chc/hyformer"                       
-):  
+class Hyformer(BaseModel):  
     def __init__(self):
         self.model_config = [
             "hyformer_molecules_50M",
@@ -136,6 +131,12 @@ class Hyformer(
         embeddings = featurizer.encode(inputs)
         
         return {'output' : embeddings.tolist()}
+    
+    def predict(self, input, **kwargs):
+        pass
+
+    def generate(self, input, **kwargs):
+        pass
     
 if __name__=='__main__':
     model = Hyformer()

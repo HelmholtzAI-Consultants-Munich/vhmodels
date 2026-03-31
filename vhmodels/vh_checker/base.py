@@ -37,10 +37,10 @@ class BaseModel(ABC):
     def transform(self, input, **kwargs):
         pass
     
-    # @abstractmethod
-    # def predict(self, input, **kwargs):
-    #     pass
+    @abstractmethod
+    def predict(self, input, **kwargs):
+        pass
 
-    # @abstractmethod
-    # def generate(self, input, **kwargs):
-    #     pass
+    @abstractmethod
+    def generate(self, input, **kwargs):
+        pass

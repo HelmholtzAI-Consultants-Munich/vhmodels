@@ -9,19 +9,22 @@ from transformers import XLNetModel, XLNetTokenizer
 import torch
 import re
 
-class ProtTrans(BaseModel):
+class ProtTrans(
+    BaseModel
+    ):
     def __init__(self):
-        self.available_models = [
-            "prot_bert_bfd", 
-            "prot_t5_xl_uniref50", 
-            "prot_t5_xxl_bfd",
-            "prot_t5_xxl_uniref50",
-            "prot_xlnet",
-            "prot_electra_generator_bfd",
-            "prot_electra_discriminator_bfd",
-            "prot_albert", 
-            "prot_t5_xl_bfd",
-        ]
+        self.model_specs = {
+            "prot_t5_xl_uniref50": (T5Tokenizer, T5EncoderModel),
+	        "prot_t5_xxl_uniref50": (T5Tokenizer, T5EncoderModel),
+            "prot_t5_xl_bfd": (T5Tokenizer, T5EncoderModel),
+            "prot_bert_bfd": (BertTokenizer, BertModel),
+            "prot_bert": (BertTokenizer, BertModel),
+            "prot_albert": (AlbertTokenizer, AlbertModel),
+            "prot_xlnet": (XLNetTokenizer, XLNetModel),
+            "prot_electra_generator_bfd": (ElectraTokenizer, ElectraForMaskedLM),
+            "prot_electra_discriminator_bfd": (ElectraTokenizer, ElectraForPreTraining),
+            "prot_electra_bfd": (ElectraTokenizer, ElectraModel)
+        }
 
         self.tokenizer = None
         self.model = None
@@ -37,6 +40,7 @@ class ProtTrans(BaseModel):
         - prot_xlnet 
         - prot_electra_generator_bfd
         - prot_electra_discriminator_bfd
+        - prot_electra_bfd
         - prot_albert
         - prot_t5_xl_bfd
         
@@ -58,36 +62,28 @@ class ProtTrans(BaseModel):
             kwargs.get("device", "cuda" if torch.cuda.is_available() else "cpu")
         )
 
-        model_name = f"virtual-human-chc/{model}"
+        self.model_name = f"virtual-human-chc/{model}"
 
-        model_specs = {
-            "prot_t5_xl_uniref50": (T5Tokenizer, T5EncoderModel),
-	    "prot_t5_xxl_uniref50": (T5Tokenizer, T5EncoderModel),
-            "prot_t5_xl_bfd": (T5Tokenizer, T5EncoderModel),
-            "prot_bert_bfd": (BertTokenizer, BertModel),
-            "prot_bert": (BertTokenizer, BertModel),
-            "prot_albert": (AlbertTokenizer, AlbertModel),
-            "prot_xlnet": (XLNetTokenizer, XLNetModel),
-        }
-
-        if model not in model_specs:
+        if model not in self.model_specs:
             raise ValueError(
                 f"Unsupported model '{model}'. "
-                f"Supported models: {', '.join(model_specs.keys())}"
+                f"Supported models: {', '.join(self.model_specs.keys())}"
             )
 
-        tokenizer_cls, model_cls = model_specs[model]
+        tokenizer_cls, model_cls = self.model_specs[model]
 
-        self.tokenizer = tokenizer_cls.from_pretrained(model_name, do_lower_case=False)
-
-        # Some checkpoints may need from_pt=True depending on the upstream format.
-        # Use it only where required.
-        self.model = model_cls.from_pretrained(model_name)
+        if model == "prot_electra_bfd":
+            self.tokenizer = tokenizer_cls.from_pretrained("virtual-human-chc/prot_electra_generator_bfd", do_lower_case=False)
+            self.model = model_cls.from_pretrained("virtual-human-chc/prot_electra_discriminator_bfd")
+        else:
+            self.tokenizer = tokenizer_cls.from_pretrained(self.model_name, do_lower_case=False)
+            self.model = model_cls.from_pretrained(self.model_name)
 
         self.model = self.model.to(self.device)
 
-        if self.device.type == "cpu":
-            self.model = self.model.to(torch.float32)
+        # TODO: Should this code snippet be added?
+        # if self.device.type == "cpu":
+        #     self.model = self.model.to(torch.float32)
 
         self.model.eval()
         
@@ -95,18 +91,19 @@ class ProtTrans(BaseModel):
         """
         Expects input like "MKVILLLLAVVAFGHALCRV".
 
-        Example input: [“PRTEINO”, “SEQWENCE”] 
+        Example input: [“PRTEINO”, “SEQWENCE”] or ["AETCZAO","SKTZP"]
         """
+        # TODO: Should preprocess handle file and folder as input?
+        # TODO: Should preprocess handle spaced input, e.g. P R T E I N O?
         return [" ".join(list(re.sub(r"[UZOB]", "X", seq))) for seq in input]   
     
     def transform(self, input, **kwargs):
         """
         Creates the embeddings for the input data. The function expects the model to be loaded already. 
 
-        The input should be already preprocessed. See function "preprocess".
+        The input should be already preprocessed. See function "_preprocess".
 
-        The returned embeddings have different length. You should remove the padding. To get the first sequence without padding:
-        - embedding_repr.last_hidden_state[0,:7]
+        The function removes the padding and special tokens before returning to result.
 
         To get per protein embedding:
         - emb_0.mean(dim=0)
@@ -135,11 +132,43 @@ class ProtTrans(BaseModel):
         with torch.no_grad():
             embedding_repr = self.model(input_ids=input_ids, attention_mask=attention_mask)
         
-        return {'output': embedding_repr.last_hidden_state.tolist()}
+        if self.model_name in [
+                "virtual-human-chc/prot_electra_generator_bfd", 
+                "virtual-human-chc/prot_electra_discriminator_bfd",
+                "virtual-human-chc/prot_electra_bfd"
+            ]:
+            embedding = embedding_repr[0].cpu().numpy()
+
+            # Remove padding (\<pad\>) and special tokens (\</s\>) that is added by the model
+            # TODO: Should the function remove the padding and the special tokens or this should be an option?
+            features = [] 
+            for seq_num in range(len(embedding)):
+                seq_len = (attention_mask[seq_num] == 1).sum()
+                seq_emd = embedding[seq_num][:seq_len-1]
+                features.append(seq_emd.tolist())
+        else:
+            embedding = embedding_repr.last_hidden_state.cpu().numpy().tolist()
+
+            # Remove padding (\<pad\>) and special tokens (\</s\>) that is added by the model
+            # TODO: Should the function remove the padding and the special tokens or this should be an option?
+            features = [] 
+            for seq_num in range(len(embedding)):
+                seq_len = (attention_mask[seq_num] == 1).sum()
+                seq_emd = embedding[seq_num][:seq_len-1]
+                features.append(seq_emd)
+
+        return {'output': features[0]}
+    
+    def predict(self, input, **kwargs):
+        pass
+
+    def generate(self, input, **kwargs):
+        pass
+
     
 if __name__=='__main__':
     model = ProtTrans()
-    model.load_model('prot_t5_xxl_uniref50')
+    model.load_model('prot_electra_discriminator_bfd')
     result = model.transform(input=[
         "PRTEINO", "SEQWENCE"
     ])

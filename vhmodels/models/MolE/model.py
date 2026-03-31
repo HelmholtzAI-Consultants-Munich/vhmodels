@@ -1,4 +1,4 @@
-#from vhmodels.vh_checker.base import BaseModel
+from vhmodels.vh_checker.base import BaseModel
 import torch
 import yaml
 import pickle
@@ -6,12 +6,7 @@ import pandas as pd
 from huggingface_hub import hf_hub_download
 from mole_package import ginet_concat, mole_antimicrobial_prediction, mole_representation, dataset_representation
 
-class MolE(
-    #BaseModel,
-    #project="mole",
-    #description="MolE learns task-independent molecular representations of chemicals via Graph Isomorphism Networks (GINs)", 
-    #link="https://huggingface.co/virtual-human-chc/MolE"                       
-):
+class MolE(BaseModel):
     
     def __init__(self):
         self.repo = "virtual-human-chc/MolE"
@@ -60,6 +55,12 @@ class MolE(
         smiles = mole_representation.read_smiles(input)
         emb = dataset_representation.batch_representation(smiles_list=smiles, dl_model=self.model, device=self.device)
         return {'output': emb.tolist()}
+    
+    def predict(self, input, **kwargs):
+        pass
+
+    def generate(self, input, **kwargs):
+        pass
 
 if __name__=='__main__':
     model = MolE()

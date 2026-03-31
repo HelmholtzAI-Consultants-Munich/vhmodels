@@ -7,12 +7,7 @@ from torchvision import transforms
 from pathlib import Path
 from PIL import Image
 
-class DinoBloom(
-    BaseModel,
-    #project="dinobloom",
-    #description="a ViT (Vision Transformer) built upon DINOv2 (Meta AI) and trained on data of single cells from peripheral blood and bone marrow", 
-    #link="https://huggingface.co/virtual-human-chc/DinoBloom"                       
-):
+class DinoBloom(BaseModel):
     def __init__(self):
         self.model_config = {
             "s": ("dinov2_vits14", 384),
@@ -201,6 +196,12 @@ class DinoBloom(
         final_tensor = torch.cat(all_features, dim=0)
 
         return {'output' : final_tensor.tolist()}
+    
+    def predict(self, input, **kwargs):
+        pass
+
+    def generate(self, input, **kwargs):
+        pass
     
 if __name__=='__main__':
     db = DinoBloom()
