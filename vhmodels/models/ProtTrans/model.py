@@ -116,7 +116,7 @@ class ProtTrans(
         with torch.no_grad():
             embedding_repr = self.model(input_ids=input_ids, attention_mask=attention_mask)
         
-        return {'outputs': embedding_repr}
+        return {'output': embedding_repr}
     
 if __name__=='__main__':
     ...

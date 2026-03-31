@@ -30,17 +30,17 @@
 # result = model.transform(input='example_data/DinoBloom/001.bmp')
 # print(result)
 
-# import vhmodels
-
-# model = vhmodels.load_model(project='prottrans', model='prot_t5_xl_uniref50')
-
-# results = model.transform(input=[
-#         "PRTEINO", "SEQWENCE"
-#     ])
-# print(results)
-
 import vhmodels
 
-model = vhmodels.load_model(project='mole')
-results = model.transform(input='example_data/MolE/sequences.smiles')
+model = vhmodels.load_model(project='prottrans', model='prot_t5_xl_uniref50')
+
+results = model.transform(input=[
+        "PRTEINO", "SEQWENCE"
+    ])
 print(results)
+
+# import vhmodels
+
+# model = vhmodels.load_model(project='mole')
+# results = model.transform(input='example_data/MolE/sequences.smiles')
+# print(results)
