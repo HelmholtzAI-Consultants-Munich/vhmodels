@@ -7,6 +7,7 @@ from torchvision import transforms
 from pathlib import Path
 from PIL import Image
 
+
 class DinoBloom(BaseModel):
     def __init__(self):
         self.model_config = {
@@ -16,34 +17,35 @@ class DinoBloom(BaseModel):
             "g": ("dinov2_vitg14", 1536),
         }
 
-        self.img_transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225]
-            ),
-        ])
+        self.img_transform = transforms.Compose(
+            [
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),
+            ]
+        )
 
         self.model = None
         self.device = None
-        
+
     def load_model(self, model=None, **kwargs):
-        """    
-        Downloads and loads the specified model version - S, B, L, G - of the DinoBloom models. This includes the following steps: 
-        - Loading “facebookresearch/dinov2” 
-        - Load “pytorch_model_{model}.bin” 
-        
+        """
+        Downloads and loads the specified model version - S, B, L, G - of the DinoBloom models. This includes the following steps:
+        - Loading “facebookresearch/dinov2”
+        - Load “pytorch_model_{model}.bin”
+
         For more information, check (link to HF repo).
 
         Parameters
         -------
-        model : str 
-            Version of the model 
-        
+        model : str
+            Version of the model
+
         device : torch.device or str, optional
             The device that should be used. Either "cuda" or "cpu".
-        
+
         Returns
         ------
         None
@@ -53,10 +55,11 @@ class DinoBloom(BaseModel):
             raise ValueError(
                 f"Unknown model '{self.model}' in DinoBloom. Available models: {list(self.model_config.keys())}"
             )
-        
+
         # Get user's input for device; otherwise, fall back to pytorch function
-        self.device = torch.device(kwargs.get("device", 
-                                              "cuda" if torch.cuda.is_available() else "cpu"))
+        self.device = torch.device(
+            kwargs.get("device", "cuda" if torch.cuda.is_available() else "cpu")
+        )
 
         dinov2_model, embed_dim = self.model_config[model]
 
@@ -65,8 +68,7 @@ class DinoBloom(BaseModel):
 
         # Download DinoBloom weights
         ckpt_path = hf_hub_download(
-            repo_id="virtual-human-chc/DinoBloom",
-            filename=f"pytorch_model_{model}.bin"
+            repo_id="virtual-human-chc/DinoBloom", filename=f"pytorch_model_{model}.bin"
         )
 
         ckpt = torch.load(ckpt_path, map_location="cpu")
@@ -76,7 +78,7 @@ class DinoBloom(BaseModel):
         self.model.load_state_dict(ckpt, strict=True)
         self.model.to(self.device)
         self.model.eval()
-    
+
     def _preprocess(self, input):
         """
         Preprocess images for transformer models.
@@ -99,11 +101,11 @@ class DinoBloom(BaseModel):
         torch.Tensor
             Batch tensor of shape (N, 3, 224, 224)
         """
-        # if data.get('inputs', None) is None:    
+        # if data.get('inputs', None) is None:
         #     raise ValueError("'data' should be a dict with key 'inputs'")
-        
+
         # inputs = data.get('inputs', None)
-        
+
         images = []
 
         # convert Path objects
@@ -153,7 +155,7 @@ class DinoBloom(BaseModel):
 
     def transform(self, input, batch_size=32, **kwargs):
         """
-        Creates the embeddings for the input data. The function expects the model to be loaded already. 
+        Creates the embeddings for the input data. The function expects the model to be loaded already.
 
         Parameters
         -------
@@ -169,16 +171,16 @@ class DinoBloom(BaseModel):
         **kwargs : dict, optional
             Additional keyword arguments for compatibility or future extensions (currently unused).
 
-        Returns 
-        ------- 
+        Returns
+        -------
         dict
             A dictionary containing:
             - 'output': list of lists
         """
         if self.model is None:
             raise RuntimeError("Model not loaded. Call load_model() first.")
-        
-        all_inputs = self._preprocess(input) 
+
+        all_inputs = self._preprocess(input)
 
         # If model isn't on the given device, move it there
         if next(self.model.parameters()).device != self.device:
@@ -195,18 +197,19 @@ class DinoBloom(BaseModel):
 
         final_tensor = torch.cat(all_features, dim=0)
 
-        return {'output' : final_tensor.tolist()}
-    
+        return {"output": final_tensor.tolist()}
+
     def predict(self, input, **kwargs):
         pass
 
     def generate(self, input, **kwargs):
         pass
-    
-if __name__=='__main__':
+
+
+if __name__ == "__main__":
     db = DinoBloom()
-    
-    test_image = Image.new('RGB', (224, 224), color=(73, 109, 137))
+
+    test_image = Image.new("RGB", (224, 224), color=(73, 109, 137))
 
     db.load_model(model="s", device="cpu")
     result = db.transform(data=test_image)

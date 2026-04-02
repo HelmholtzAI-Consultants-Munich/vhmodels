@@ -1,7 +1,7 @@
 {
     "name": "prottrans",
-    "conda_env": "vhmodels-prottrans", 
-    "class_path": "ProtTrans.model.ProtTrans",  
-    "description": "State of the art pre-trained models for proteins", 
-    "link": "https://huggingface.co/collections/virtual-human-chc/prottrans"    
+    "conda_env": "vhmodels-prottrans",
+    "class_path": "ProtTrans.model.ProtTrans",
+    "description": "State of the art pre-trained models for proteins",
+    "link": "https://huggingface.co/collections/virtual-human-chc/prottrans"
 }

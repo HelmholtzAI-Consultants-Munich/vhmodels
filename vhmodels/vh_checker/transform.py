@@ -5,14 +5,16 @@ import argparse
 import json
 import sys
 from pathlib import Path
-import pandas as pd
 
 current_file = Path(__file__).resolve()
-project_root = current_file.parent.parent.parent # Goes up to the folder containing 'vhmodels'
+project_root = (
+    current_file.parent.parent.parent
+)  # Goes up to the folder containing 'vhmodels'
 
 # 2. Inject it into the system path
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -30,7 +32,7 @@ def main():
 
         # 3. Parse data and execute transformation
         result = instance.transform(args.input)
-        
+
         # 4. Output the result to STDOUT as JSON
         # The Proxy catches this output.
         print(json.dumps(result))
@@ -39,6 +41,7 @@ def main():
         # Any errors here are sent to STDERR so the Proxy can report them
         print(f"Internal Model Error: {str(e)}", file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

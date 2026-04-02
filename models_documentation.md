@@ -13,13 +13,13 @@ links-as-notes: true
 ...
 
 
-    
+
 # Module `models` {#models}
 
 
 
 
-    
+
 ## Sub-modules
 
 * [models.model_dinobloom](#models.model_dinobloom)
@@ -33,7 +33,7 @@ links-as-notes: true
 
 
 
-    
+
 # Module `models.model_dinobloom` {#models.model_dinobloom}
 
 
@@ -42,11 +42,11 @@ links-as-notes: true
 
 
 
-    
+
 ## Classes
 
 
-    
+
 ### Class `DinoBloom` {#models.model_dinobloom.DinoBloom}
 
 
@@ -58,7 +58,7 @@ links-as-notes: true
 
 
 
-    
+
 #### Ancestors (in MRO)
 
 * [models.vhmodels.VHModel](#models.vhmodels.VHModel)
@@ -68,11 +68,11 @@ links-as-notes: true
 
 
 
-    
+
 #### Methods
 
 
-    
+
 ##### Method `encode` {#models.model_dinobloom.DinoBloom.encode}
 
 
@@ -85,22 +85,22 @@ links-as-notes: true
 >     )
 
 
-Creates the embeddings for the input data. The function expects the model to be loaded already. 
+Creates the embeddings for the input data. The function expects the model to be loaded already.
 
-Transforms the input - resize and normalize. 
+Transforms the input - resize and normalize.
 
 ###### Parameters
 
 **```inputs```** :&ensp;<code>str</code>
 :   Path to folder or image
 
-Returns 
-------- 
+Returns
+-------
 
-numpy.ndarray 
+numpy.ndarray
     Embeddings of the input data
 
-    
+
 ##### Method `generate` {#models.model_dinobloom.DinoBloom.generate}
 
 
@@ -115,7 +115,7 @@ numpy.ndarray
 
 
 
-    
+
 ##### Method `load_model` {#models.model_dinobloom.DinoBloom.load_model}
 
 
@@ -128,9 +128,9 @@ numpy.ndarray
 >     )
 
 
-Downloads and loads the specified model version - S, B, L, G - of the DinoBloom models. This includes the following steps: 
-- Loading “facebookresearch/dinov2” 
-- Load “pytorch_model_{variant}.bin” 
+Downloads and loads the specified model version - S, B, L, G - of the DinoBloom models. This includes the following steps:
+- Loading “facebookresearch/dinov2”
+- Load “pytorch_model_{variant}.bin”
 
 For more information, check (link to HF repo).
 
@@ -139,13 +139,13 @@ For more information, check (link to HF repo).
 **```model```** :&ensp;<code>str </code>
 :   Version of the model
 
-Returns 
-------- 
+Returns
+-------
 
-dinov2.models.vision_transformer.DinoVisionTransformer (inherits from nn.torch.Module) 
+dinov2.models.vision_transformer.DinoVisionTransformer (inherits from nn.torch.Module)
     The loaded model
 
-    
+
 ##### Method `predict` {#models.model_dinobloom.DinoBloom.predict}
 
 
@@ -162,7 +162,7 @@ dinov2.models.vision_transformer.DinoVisionTransformer (inherits from nn.torch.M
 
 
 
-    
+
 # Module `models.model_hyformer` {#models.model_hyformer}
 
 
@@ -171,11 +171,11 @@ dinov2.models.vision_transformer.DinoVisionTransformer (inherits from nn.torch.M
 
 
 
-    
+
 ## Classes
 
 
-    
+
 ### Class `Hyformer` {#models.model_hyformer.Hyformer}
 
 
@@ -187,7 +187,7 @@ dinov2.models.vision_transformer.DinoVisionTransformer (inherits from nn.torch.M
 
 
 
-    
+
 #### Ancestors (in MRO)
 
 * [models.vhmodels.VHModel](#models.vhmodels.VHModel)
@@ -197,11 +197,11 @@ dinov2.models.vision_transformer.DinoVisionTransformer (inherits from nn.torch.M
 
 
 
-    
+
 #### Methods
 
 
-    
+
 ##### Method `encode` {#models.model_hyformer.Hyformer.encode}
 
 
@@ -214,32 +214,32 @@ dinov2.models.vision_transformer.DinoVisionTransformer (inherits from nn.torch.M
 >     )
 
 
-Creates embeddings for the provided input. 
-The function expects the tokenizer and the model to be loaded already. 
+Creates embeddings for the provided input.
+The function expects the tokenizer and the model to be loaded already.
 
-Parameters 
----------- 
-inputs : str 
-    Path to the raw data file containing molecular representations. 
+Parameters
+----------
+inputs : str
+    Path to the raw data file containing molecular representations.
 
-Batch_size : int 
-    Size of the batch 
+Batch_size : int
+    Size of the batch
 
-Device: str 
-    Device used 
+Device: str
+    Device used
 
-Returns 
-------- 
-numpy.ndarray 
-    Embeddings of the input data 
+Returns
+-------
+numpy.ndarray
+    Embeddings of the input data
 
 ###### Example
 
-[[0.12989292, -0.04472789, 1.27521825 ... -0.31017503, -2.61905527, -0.26748869] 
-[ 0.04795801, -0.71846646, 3.47797537 ...  2.37488675, -0.28063831, 1.84492266] 
+[[0.12989292, -0.04472789, 1.27521825 ... -0.31017503, -2.61905527, -0.26748869]
+[ 0.04795801, -0.71846646, 3.47797537 ...  2.37488675, -0.28063831, 1.84492266]
 [-0.00499679, 0.72711295, 0.48343059 ... -1.17737067, 0.93289232, 0.32299849]]
 
-    
+
 ##### Method `generate` {#models.model_hyformer.Hyformer.generate}
 
 
@@ -254,7 +254,7 @@ numpy.ndarray
 
 
 
-    
+
 ##### Method `load_model` {#models.model_hyformer.Hyformer.load_model}
 
 
@@ -267,32 +267,32 @@ numpy.ndarray
 >     )
 
 
-Downloads and loads the artifacts for the specified model. The available models are: 
-- hyformer_molecules_50M 
-- hyformer_peptides_34M 
-- hyformer_peptides_34_MIC 
-- hyformer_molecules_8M 
+Downloads and loads the artifacts for the specified model. The available models are:
+- hyformer_molecules_50M
+- hyformer_peptides_34M
+- hyformer_peptides_34_MIC
+- hyformer_molecules_8M
 
-The function retrieves and prepares following files: 
-- vocab.txt: vocabulary of the tokenizer 
-- tokenizer_config.json: configuration of the tokenizer 
-- model_config.json: configuration of the model 
-- downstream_config.json: configuration for the downstream prediction task 
-- ckpt.pt: weights of the model 
+The function retrieves and prepares following files:
+- vocab.txt: vocabulary of the tokenizer
+- tokenizer_config.json: configuration of the tokenizer
+- model_config.json: configuration of the model
+- downstream_config.json: configuration for the downstream prediction task
+- ckpt.pt: weights of the model
 
-For more information, check out (link to HF). 
+For more information, check out (link to HF).
 
 Parameters
--------- 
-model: str 
-    Name of the model 
+--------
+model: str
+    Name of the model
 
-Returns 
-------- 
-Type of the model 
+Returns
+-------
+Type of the model
     The loaded model
 
-    
+
 ##### Method `predict` {#models.model_hyformer.Hyformer.predict}
 
 
@@ -309,7 +309,7 @@ Type of the model
 
 
 
-    
+
 # Module `models.model_mole` {#models.model_mole}
 
 
@@ -318,11 +318,11 @@ Type of the model
 
 
 
-    
+
 ## Classes
 
 
-    
+
 ### Class `MolE` {#models.model_mole.MolE}
 
 
@@ -334,7 +334,7 @@ Type of the model
 
 
 
-    
+
 #### Ancestors (in MRO)
 
 * [models.vhmodels.VHModel](#models.vhmodels.VHModel)
@@ -344,11 +344,11 @@ Type of the model
 
 
 
-    
+
 #### Methods
 
 
-    
+
 ##### Method `encode` {#models.model_mole.MolE.encode}
 
 
@@ -361,24 +361,24 @@ Type of the model
 >     )
 
 
-Creates embeddings for the provided input data. 
+Creates embeddings for the provided input data.
 
-The model is expected to be already loaded before calling this function. 
+The model is expected to be already loaded before calling this function.
 
-Parameters 
----------- 
-inputs : str 
-    Path to the raw data file containing molecular representations. 
-    The file must contain two columns: 
-    - "chem_name": Name of the molecule 
-    - "smiles": SMILES representation of the molecule 
+Parameters
+----------
+inputs : str
+    Path to the raw data file containing molecular representations.
+    The file must contain two columns:
+    - "chem_name": Name of the molecule
+    - "smiles": SMILES representation of the molecule
 
-Returns 
-------- 
-pandas.core.frame.DataFrame 
-    A DataFrame containing the generated embeddings. 
-    - The index corresponds to "chem_name". 
-    - The columns correspond to the 1000 embedding dimensions. 
+Returns
+-------
+pandas.core.frame.DataFrame
+    A DataFrame containing the generated embeddings.
+    - The index corresponds to "chem_name".
+    - The columns correspond to the 1000 embedding dimensions.
 
 ###### Example
 
@@ -393,7 +393,7 @@ Elivitegravir  24.466951  49.919296  2.536460  ...  -5.996571 -60.164993  17.515
 Opicapone      16.270607  30.276501  0.966270  ...  -4.108759 -41.224167  18.833054
 Ebastine       36.845181  69.056267  4.710568  ...  -8.217525 -82.448318   7.520126
 
-    
+
 ##### Method `generate` {#models.model_mole.MolE.generate}
 
 
@@ -408,7 +408,7 @@ Ebastine       36.845181  69.056267  4.710568  ...  -8.217525 -82.448318   7.520
 
 
 
-    
+
 ##### Method `load_model` {#models.model_mole.MolE.load_model}
 
 
@@ -421,19 +421,19 @@ Ebastine       36.845181  69.056267  4.710568  ...  -8.217525 -82.448318   7.520
 >     )
 
 
-Downloads and loads the necessary artifacts for the MolE model from HuggingFace. 
+Downloads and loads the necessary artifacts for the MolE model from HuggingFace.
 
-The function retrieves and prepares the following files: 
+The function retrieves and prepares the following files:
 - config.yaml: Contains the transformer configuration.
-- model.pth: Contains the trained model weights. 
-- MolE-XGBoost-08.03.2024_14.20.pkl: Contains the XGBoost model used within MolE. 
+- model.pth: Contains the trained model weights.
+- MolE-XGBoost-08.03.2024_14.20.pkl: Contains the XGBoost model used within MolE.
 
-Returns 
-------- 
-Type of the model 
+Returns
+-------
+Type of the model
     The loaded model
 
-    
+
 ##### Method `predict` {#models.model_mole.MolE.predict}
 
 
@@ -450,7 +450,7 @@ Type of the model
 
 
 
-    
+
 # Module `models.model_prottrans` {#models.model_prottrans}
 
 
@@ -459,11 +459,11 @@ Type of the model
 
 
 
-    
+
 ## Classes
 
 
-    
+
 ### Class `ProtTrans` {#models.model_prottrans.ProtTrans}
 
 
@@ -475,7 +475,7 @@ Type of the model
 
 
 
-    
+
 #### Ancestors (in MRO)
 
 * [models.vhmodels.VHModel](#models.vhmodels.VHModel)
@@ -485,11 +485,11 @@ Type of the model
 
 
 
-    
+
 #### Methods
 
 
-    
+
 ##### Method `encode` {#models.model_prottrans.ProtTrans.encode}
 
 
@@ -502,21 +502,21 @@ Type of the model
 >     )
 
 
-Creates the embeddings for the input data. The function expects the model to be loaded already. 
+Creates the embeddings for the input data. The function expects the model to be loaded already.
 
-Example input: [“PRTEINO”, “SEQWENCE”] 
+Example input: [“PRTEINO”, “SEQWENCE”]
 
 Parameters
----------- 
-inputs: numpy.ndarray 
-    Protein sequences to be encoded 
+----------
+inputs: numpy.ndarray
+    Protein sequences to be encoded
 
 Returns
----------- 
-numpy.ndarray 
+----------
+numpy.ndarray
     Embeddings of the input data
 
-    
+
 ##### Method `generate` {#models.model_prottrans.ProtTrans.generate}
 
 
@@ -531,7 +531,7 @@ numpy.ndarray
 
 
 
-    
+
 ##### Method `load_model` {#models.model_prottrans.ProtTrans.load_model}
 
 
@@ -544,31 +544,31 @@ numpy.ndarray
 >     )
 
 
-Downloads and loads the artifacts for the specified model in the ProtTrans HF repository. Possible options are: 
-- prot_bert_bfd: loads encoder and two prediction models - prot_bert_bfd_membrane and prot_bert_bfd_ss3 
-- prot_t5_xl_uniref50: loads  encoder 
-- prot_t5_xxl_bfd: loads encoder 
-- prot_t5_xxl_uniref50: loads encoder 
-- prot_xlnet: loads encoder 
-- prot_electra_generator_bfd: loads encoder 
-- prot_electra_discriminator_bfd: loads encoder 
-- prot_albert: loads encoder 
-- prot_t5_xl_bfd: loads encoder 
+Downloads and loads the artifacts for the specified model in the ProtTrans HF repository. Possible options are:
+- prot_bert_bfd: loads encoder and two prediction models - prot_bert_bfd_membrane and prot_bert_bfd_ss3
+- prot_t5_xl_uniref50: loads  encoder
+- prot_t5_xxl_bfd: loads encoder
+- prot_t5_xxl_uniref50: loads encoder
+- prot_xlnet: loads encoder
+- prot_electra_generator_bfd: loads encoder
+- prot_electra_discriminator_bfd: loads encoder
+- prot_albert: loads encoder
+- prot_t5_xl_bfd: loads encoder
 
-For more information, check (link to the HF repo). 
+For more information, check (link to the HF repo).
 
 Parameters
--------- 
-model: str 
-    Name of the model 
+--------
+model: str
+    Name of the model
 
-Returns 
-------- 
+Returns
+-------
 
-Type of the model 
+Type of the model
     The loaded model
 
-    
+
 ##### Method `predict` {#models.model_prottrans.ProtTrans.predict}
 
 
@@ -585,7 +585,7 @@ Type of the model
 
 
 
-    
+
 # Module `models.vhmodels` {#models.vhmodels}
 
 
@@ -594,11 +594,11 @@ Type of the model
 
 
 
-    
+
 ## Classes
 
 
-    
+
 ### Class `VHModel` {#models.vhmodels.VHModel}
 
 
@@ -611,7 +611,7 @@ Type of the model
 
 
 
-    
+
 #### Descendants
 
 * [models.model_dinobloom.DinoBloom](#models.model_dinobloom.DinoBloom)
@@ -620,11 +620,11 @@ Type of the model
 * [models.model_prottrans.ProtTrans](#models.model_prottrans.ProtTrans)
 
 
-    
+
 #### Class variables
 
 
-    
+
 ##### Variable `capabilities` {#models.vhmodels.VHModel.capabilities}
 
 
@@ -634,11 +634,11 @@ The type of the None singleton.
 
 
 
-    
+
 #### Static methods
 
 
-    
+
 ##### `Method list_sources` {#models.vhmodels.VHModel.list_sources}
 
 
@@ -650,11 +650,11 @@ The type of the None singleton.
 
 
 
-    
+
 #### Methods
 
 
-    
+
 ##### Method `encode` {#models.vhmodels.VHModel.encode}
 
 
@@ -669,7 +669,7 @@ The type of the None singleton.
 
 
 
-    
+
 ##### Method `generate` {#models.vhmodels.VHModel.generate}
 
 
@@ -684,7 +684,7 @@ The type of the None singleton.
 
 
 
-    
+
 ##### Method `load_model` {#models.vhmodels.VHModel.load_model}
 
 
@@ -699,7 +699,7 @@ The type of the None singleton.
 
 
 
-    
+
 ##### Method `predict` {#models.vhmodels.VHModel.predict}
 
 
