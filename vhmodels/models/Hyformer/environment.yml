@@ -17,6 +17,6 @@ dependencies:
     - torchvision==0.17.2+cu118
     - torchaudio==2.2.2+cu118
     - deepchem==2.8.0
-    - guacamol 
+    - guacamol
     - fcd==1.2
     - git+https://github.com/HelmholtzAI-Consultants-Munich/virtual_human_Hyformer.git@main#subdirectory=hyformer

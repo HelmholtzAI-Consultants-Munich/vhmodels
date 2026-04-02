@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
-USER mambauser 
+USER mambauser
 
 # Create environment
 RUN micromamba create -y -f environment.yml && micromamba clean --all --yes
@@ -24,4 +24,3 @@ RUN micromamba run -n vhmodels-{project} pip install -e .
 
 # Run the tests for the given model e.g. tests/test_dinobloom.py
 CMD ["micromamba", "run", "-n", "vhmodels-{project}", "pytest", "tests/test_{project}.py"]
-

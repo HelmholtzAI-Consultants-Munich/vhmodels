@@ -2,6 +2,6 @@
     "name": "dinobloom",
     "conda_env": "vhmodels-dinobloom",
     "class_path": "DinoBloom.model.DinoBloom",
-    "description": "a ViT (Vision Transformer) built upon DINOv2 (Meta AI) and trained on data of single cells from peripheral blood and bone marrow", 
+    "description": "a ViT (Vision Transformer) built upon DINOv2 (Meta AI) and trained on data of single cells from peripheral blood and bone marrow",
     "link": "https://huggingface.co/virtual-human-chc/DinoBloom"
 }

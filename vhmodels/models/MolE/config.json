@@ -2,6 +2,6 @@
     "name": "mole",
     "conda_env": "vhmodels-hyformer",
     "class_path": "MolE.model.MolE",
-    "description": "MolE learns task-independent molecular representations of chemicals via Graph Isomorphism Networks (GINs)", 
-    "link": "https://huggingface.co/virtual-human-chc/MolE"   
+    "description": "MolE learns task-independent molecular representations of chemicals via Graph Isomorphism Networks (GINs)",
+    "link": "https://huggingface.co/virtual-human-chc/MolE"
 }
