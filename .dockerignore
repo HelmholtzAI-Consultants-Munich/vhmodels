@@ -1,0 +1,10 @@
+.git/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+*.log
+build/
+dist/
+vhmodels.egg-info/

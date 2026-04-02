@@ -1,0 +1,13 @@
+name: vhmodels-dinobloom
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - pandas
+  - matplotlib
+  - pip:
+    - torch==2.9.1 
+    - torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu118
+    - huggingface_hub==1.1.7
