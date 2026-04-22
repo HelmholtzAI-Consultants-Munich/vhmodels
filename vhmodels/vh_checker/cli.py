@@ -210,7 +210,7 @@ def run(model_id, data_json):
     try:
         data = json.loads(data_json)
         model = load_model(model_id)
-        result = model.transform(data)
+        result = model.embed(data)
         click.echo(json.dumps(result, indent=2))
     except Exception as e:
         click.echo(f"Error: {str(e)}")

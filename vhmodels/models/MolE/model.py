@@ -38,7 +38,7 @@ class MolE(BaseModel):
             )
         )
 
-    def transform(self, input, **kwargs):
+    def embed(self, input, **kwargs):
         """
         Creates embeddings for the provided input data.
 
@@ -72,5 +72,5 @@ class MolE(BaseModel):
 if __name__ == "__main__":
     model = MolE()
     model.load_model()
-    result = model.transform("example_data/MolE/sequences.smiles")
+    result = model.embed("example_data/MolE/sequences.smiles")
     print(result)

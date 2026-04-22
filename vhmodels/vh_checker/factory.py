@@ -28,7 +28,7 @@ class ModelProxy:
         )
         return self.env_name in result.stdout
 
-    def transform(self, input, runtime="conda", **kwargs):
+    def embed(self, input, runtime="conda", **kwargs):
         if not self._env_exists():
             raise RuntimeError(
                 f"The environment '{self.env_name}' does not exist. "

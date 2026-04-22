@@ -107,7 +107,7 @@ class ProtTrans(BaseModel):
         # TODO: Should preprocess handle spaced input, e.g. P R T E I N O?
         return [" ".join(list(re.sub(r"[UZOB]", "X", seq))) for seq in input]
 
-    def transform(self, input, **kwargs):
+    def embed(self, input, **kwargs):
         """
         Creates the embeddings for the input data. The function expects the model to be loaded already.
 
@@ -183,6 +183,6 @@ class ProtTrans(BaseModel):
 if __name__ == "__main__":
     model = ProtTrans()
     model.load_model("prot_electra_discriminator_bfd")
-    result = model.transform(input=["PRTEINO", "SEQWENCE"])
+    result = model.embed(input=["PRTEINO", "SEQWENCE"])
 
     print(result)
