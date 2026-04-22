@@ -1,4 +1,4 @@
-# The file contains the necessary to run the function 'tranform' for the given model
+# The file contains the necessary to run the function 'embed' for the given model
 from vhmodels.vh_checker.base import BaseModel
 
 import argparse
@@ -30,8 +30,8 @@ def main():
         instance = model_cls()
         instance.load_model(args.model)
 
-        # 3. Parse data and execute transformation
-        result = instance.transform(args.input)
+        # 3. Parse data and execute embedding
+        result = instance.embed(args.input)
 
         # 4. Output the result to STDOUT as JSON
         # The Proxy catches this output.

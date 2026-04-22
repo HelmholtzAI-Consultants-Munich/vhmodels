@@ -106,7 +106,7 @@ class Hyformer(BaseModel):
     def _preprocess(self, input):
         return input
 
-    def transform(self, input, batch_size=128, **kwargs):
+    def embed(self, input, batch_size=128, **kwargs):
         """
         Creates embeddings for the provided input.
         The function expects the tokenizer and the model to be loaded already.
@@ -147,7 +147,7 @@ class Hyformer(BaseModel):
 if __name__ == "__main__":
     model = Hyformer()
     model.load_model("hyformer_molecules_50M")
-    results = model.transform(
+    results = model.embed(
         inputs=[
             "CCCOc1cccc(-c2nn(-c3ccccc3)cc2/C=C(/C#N)C2=[N+]c3ccccc3[N-]2)c1 O=C(c1ccccc1)c1cc([N+](=O)O)c(Sc2c([N+](=O)O)cc([N+](=O)O)cc2[N+](=O)O)cc1[N+](=O)O",
             "Nc1ncc(CN2CCC3(CC2)C[C@H](c2ccccc2)CN(C2CC2)C3)cn1 O=C(c1ccco1)N(Cc1ccccc1Cl)C[C@@H]1CC(c2ccc(Cl)o2)=NO1",

@@ -1,5 +1,5 @@
 # The file contains the interface, which each model will implement:
-# load_model, transform, predict, generate
+# load_model, embed, predict, generate
 from abc import ABC, abstractmethod
 import sys
 import os
@@ -34,7 +34,7 @@ class BaseModel(ABC):
         pass
 
     @abstractmethod
-    def transform(self, input, **kwargs):
+    def embed(self, input, **kwargs):
         pass
 
     @abstractmethod

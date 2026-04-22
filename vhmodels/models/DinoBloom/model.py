@@ -153,7 +153,7 @@ class DinoBloom(BaseModel):
         # stack batch
         return torch.stack(tensors)
 
-    def transform(self, input, batch_size=32, **kwargs):
+    def embed(self, input, batch_size=32, **kwargs):
         """
         Creates the embeddings for the input data. The function expects the model to be loaded already.
 
@@ -212,7 +212,7 @@ if __name__ == "__main__":
     test_image = Image.new("RGB", (224, 224), color=(73, 109, 137))
 
     db.load_model(model="s", device="cpu")
-    result = db.transform(data=test_image)
+    result = db.embed(data=test_image)
     print(result)
-    batch_result = db.transform(data=[test_image] * 5)
+    batch_result = db.embed(data=[test_image] * 5)
     print(batch_result)
