@@ -33,7 +33,9 @@ def test_transform_subprocess_mock():
     fake_model_result = {"output": {"prediction": 42}}
     framed_stdout = f"{RESULT_MARKER}{json.dumps(fake_model_result)}{RESULT_MARKER}\n"
 
-    with patch("vhmodels.vh_checker.factory.ModelProxy._env_exists", return_value=True):
+    with patch(
+        "vhmodels.vh_checker.backends.CondaBackend.is_available", return_value=True
+    ):
         with patch(
             "vhmodels.vh_checker.factory._run_subprocess",
             return_value=(framed_stdout, ""),

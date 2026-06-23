@@ -4,16 +4,12 @@
 
 from vhmodels.registry import MODEL_REGISTRY
 from vhmodels.vh_checker.protocol import RESULT_MARKER
+from vhmodels.vh_checker.backends import get_backend
 
 import os
 import json
 import signal
 import subprocess
-
-current_file_path = os.path.abspath(__file__)
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file_path)))
-env = os.environ.copy()
-env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
 
 DEFAULT_TIMEOUT = 600
 
@@ -120,16 +116,11 @@ class ModelProxy:
         self.runtime = runtime
         self.env_name = env_name
         self.timeout = timeout
-
-    def _env_exists(self):
-        # A quick way to check if a conda env exists
-        result = subprocess.run(
-            ["conda", "env", "list"], capture_output=True, text=True
-        )
-        return self.env_name in result.stdout
+        # Selecting the backend here fails fast on an unsupported runtime.
+        self.backend = get_backend(runtime, env_name)
 
     def embed(self, input, **kwargs):
-        if not self._env_exists():
+        if not self.backend.is_available():
             raise RuntimeError(
                 f"The environment '{self.env_name}' does not exist. "
                 f"Please run 'vh-checker create-env {self.project}' first."
@@ -139,48 +130,14 @@ class ModelProxy:
         # File-path inputs travel as JSON strings too; the model resolves them.
         payload = json.dumps(input)
 
-        # Run using conda env.
-        if self.runtime == "conda":
-            cmd = [
-                "conda",
-                "run",
-                "-n",
-                self.env_name,
-                "python",
-                "-m",
-                "vhmodels.vh_checker.embed",
-                "--project",
-                self.project,
-            ]
-        elif self.runtime == "docker":
-            cmd = [
-                "docker",
-                "run",
-                "--rm",
-                "-i",
-                f"vhmodels-{self.project}",
-                "micromamba",
-                "run",
-                "-n",
-                f"vhmodels-{self.project}",
-                "python",
-                "-m",
-                "vhmodels.vh_checker.embed",
-                "--project",
-                self.project,
-            ]
-        elif self.runtime == "singularity":
-            raise NotImplementedError("Singularity not implemented yet!")
-        else:
-            raise RuntimeError(
-                f"Unsupported runtime: '{self.runtime}'. "
-                f"Supported environments: conda, docker, singularity."
-            )
+        script_args = ["--project", self.project]
+        if self.model:
+            script_args += ["--model", self.model]
 
-        if hasattr(self, "model") and self.model:
-            cmd.extend(["--model", self.model])
-
-        stdout, stderr = _run_subprocess(cmd, payload, env, self.timeout)
+        cmd = self.backend.build_command(script_args)
+        stdout, stderr = _run_subprocess(
+            cmd, payload, self.backend.subprocess_env(), self.timeout
+        )
         return _extract_result(stdout, stderr)
 
 
