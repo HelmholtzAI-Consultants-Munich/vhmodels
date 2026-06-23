@@ -1,44 +1,45 @@
-# The file contains the necessary to run the function 'embed' for the given model
+# The file contains the necessary to run the function 'embed' for the given model.
+# It runs *inside* the model's isolated environment as a subprocess. The parent
+# (ModelProxy) sends the input as a JSON document on stdin and reads the result
+# framed between RESULT_MARKERs on stdout.
 from vhmodels.vh_checker.base import BaseModel
+from vhmodels.vh_checker.protocol import RESULT_MARKER
 
 import argparse
 import json
 import sys
-from pathlib import Path
-
-current_file = Path(__file__).resolve()
-project_root = (
-    current_file.parent.parent.parent
-)  # Goes up to the folder containing 'vhmodels'
-
-# 2. Inject it into the system path
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", required=True, help="ID of the project to run")
     parser.add_argument("--model", required=False, help="Exact model in the project")
-    parser.add_argument("--input", required=True, help="Input data as a JSON string")
     args = parser.parse_args()
 
     model_cls = BaseModel.get_class(args.project)
 
     try:
-        # 2. Instantiate and call load_model (this happens inside the sub-env)
+        # Read the input document from stdin. Using stdin (rather than a CLI
+        # argument) avoids the OS argument-length limit on large inputs.
+        payload = sys.stdin.read()
+        input_data = json.loads(payload) if payload.strip() else None
+
+        # Instantiate and load weights (this happens inside the sub-env).
         instance = model_cls()
         instance.load_model(args.model)
 
-        # 3. Parse data and execute embedding
-        result = instance.embed(args.input)
+        # Execute embedding. The model returns its own envelope, e.g.
+        # {"output": [...]}; we emit it verbatim and let the parent unwrap.
+        result = instance.embed(input_data)
 
-        # 4. Output the result to STDOUT as JSON
-        # The Proxy catches this output.
-        print(json.dumps(result))
+        # Frame the result so the parent can extract it regardless of any other
+        # output libraries may have written to stdout.
+        sys.stdout.write(RESULT_MARKER + json.dumps(result) + RESULT_MARKER + "\n")
+        sys.stdout.flush()
 
     except Exception as e:
-        # Any errors here are sent to STDERR so the Proxy can report them
+        # Errors go to stderr so the parent can report them; a non-zero exit
+        # tells the parent the run failed.
         print(f"Internal Model Error: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
