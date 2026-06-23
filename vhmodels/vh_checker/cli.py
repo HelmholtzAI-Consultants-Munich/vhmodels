@@ -1,6 +1,6 @@
 # This file contains all the CLI functions available through the CLI (try vh-checker <command> <project_name>)
 # With the CLI, one can list all available models
-# and create conda envs, Docker images and Apptainer images for the models
+# and create conda envs and Apptainer images for the models
 
 from vhmodels.registry import MODEL_REGISTRY
 
@@ -8,8 +8,6 @@ import click
 import subprocess
 import json
 from pathlib import Path
-import io
-import tarfile
 from rich.console import Console
 from rich.table import Table
 
@@ -110,91 +108,6 @@ def create_env(project):
         click.echo(
             "Failed to create environment. Ensure Conda is installed and functional."
         )
-
-
-def _check_docker_installed():
-    """Check if Docker is installed and in PATH."""
-    try:
-        subprocess.run(
-            ["docker", "--version"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-        )
-        return True
-    except FileNotFoundError:
-        click.echo("Error: Docker is not installed or not found in PATH.")
-        return False
-    except subprocess.CalledProcessError:
-        click.echo(
-            "Error: Docker is installed but returned an error. Check your Docker installation."
-        )
-        return False
-
-
-@main.command()
-@click.argument("project")
-def create_docker_image(project):
-    """Build Docker image dynamically in-memory for a specific project."""
-
-    # Docker check
-    if not _check_docker_installed():
-        return
-
-    image_name = f"vhmodels-{project}"
-    project_root = Path(__file__).parent.parent.parent
-
-    # Paths
-    dockerfile_template_path = project_root / "vhmodels" / "envs" / "Dockerfile"
-    env_yml_path = project_root / "vhmodels" / "models" / project / "environment.yml"
-
-    if not dockerfile_template_path.exists() or not env_yml_path.exists():
-        click.echo("Dockerfile template or environment.yml not found.")
-        return
-
-    # Read Dockerfile template
-    dockerfile_str = dockerfile_template_path.read_text()
-    dockerfile_str = dockerfile_str.replace("{project}", project)
-
-    # Create in-memory tar context
-    context = io.BytesIO()
-    with tarfile.open(fileobj=context, mode="w") as tar:
-        # Add Dockerfile
-        df_bytes = dockerfile_str.encode("utf-8")
-        df_info = tarfile.TarInfo(name="Dockerfile")
-        df_info.size = len(df_bytes)
-        tar.addfile(df_info, io.BytesIO(df_bytes))
-
-        # Add environment.yml at root
-        env_bytes = env_yml_path.read_bytes()
-        env_info = tarfile.TarInfo(name="environment.yml")
-        env_info.size = len(env_bytes)
-        tar.addfile(env_info, io.BytesIO(env_bytes))
-
-        # Add all other project files
-        for path in project_root.rglob("*"):
-            if (
-                path.is_file()
-                and not path.name.startswith(".")
-                and "vhmodels.egg-info" not in path.parts
-            ):
-                arcname = path.relative_to(project_root)
-                tar.add(str(path), arcname=str(arcname))
-
-    context.seek(0)
-
-    # Build the image
-    try:
-        subprocess.run(
-            ["docker", "build", "-t", image_name, "-"],
-            input=context.read(),
-            check=True,
-            text=False,
-        )
-        click.echo(f"Successfully created Docker image '{image_name}'.")
-    except subprocess.CalledProcessError as e:
-        click.echo("Failed to build Docker image.")
-        click.echo(e.stderr)
 
 
 # TODO: Implement function the creates the Apptainer image
