@@ -33,6 +33,7 @@ def test_conda_build_command():
     assert cmd == [
         "conda",
         "run",
+        "--no-capture-output",
         "-n",
         "vhmodels-prottrans",
         "python",
@@ -43,6 +44,13 @@ def test_conda_build_command():
         "--model",
         "xl",
     ]
+
+
+def test_conda_build_command_forwards_stdin():
+    # --no-capture-output must be present, else `conda run` drops stdin and the
+    # runner reads an empty document.
+    cmd = CondaBackend("vhmodels-mole").build_command(["--project", "mole"])
+    assert "--no-capture-output" in cmd
 
 
 def test_conda_build_command_does_not_mutate_input():

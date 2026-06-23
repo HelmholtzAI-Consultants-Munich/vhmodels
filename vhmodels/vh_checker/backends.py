@@ -40,7 +40,15 @@ class CondaBackend(RuntimeBackend):
         self.env_name = env_name
 
     def build_command(self, script_args):
-        return ["conda", "run", "-n", self.env_name] + _RUNNER + list(script_args)
+        # --no-capture-output is REQUIRED: without it `conda run` does not
+        # forward the parent's stdin to the runner, so the child reads empty
+        # stdin and the model receives None. It also wires the child's
+        # stdout/stderr straight to our pipes instead of conda buffering them.
+        return (
+            ["conda", "run", "--no-capture-output", "-n", self.env_name]
+            + _RUNNER
+            + list(script_args)
+        )
 
     def is_available(self):
         result = subprocess.run(
