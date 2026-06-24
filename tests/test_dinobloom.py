@@ -5,18 +5,21 @@ from unittest.mock import patch
 import json
 
 
+@pytest.mark.integration
 def test_dinobloom_inference():
     model = vhmodels.load_model(project="dinobloom", model="s")
     result = model.embed(input="example_data/DinoBloom/001.bmp")
     assert result is not None
 
 
+@pytest.mark.integration
 def test_transform_output_format():
     model = vhmodels.load_model(project="dinobloom", model="s")
     result = model.embed(input="example_data/DinoBloom/001.bmp")
     assert isinstance(result, (dict, list))
 
 
+@pytest.mark.integration
 def test_invalid_input_file():
     import vhmodels
 
