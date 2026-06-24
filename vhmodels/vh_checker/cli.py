@@ -61,6 +61,16 @@ def _check_conda_installed():
         return False
 
 
+def _check_pip_installed(env_name):
+    result = subprocess.run(
+        ["conda", "run", "-n", env_name, "python", "-m", "pip", "--version"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    return result.returncode == 0
+
+
 @main.command()
 @click.argument("project")
 def create_env(project):
@@ -73,7 +83,6 @@ def create_env(project):
         click.echo(f"Error: Model '{project}' is not registered.")
         return
 
-    # model_cls = BaseModel.get_class(project)
     env_name = f"vhmodels-{project}"  # model_cls.env_name
 
     # Locate the model directory dynamically (handling potential capitalization)
@@ -103,6 +112,33 @@ def create_env(project):
         subprocess.run(
             ["conda", "env", "create", "-n", env_name, "-f", str(env_file)], check=True
         )
+        # install vhmodels for communication with host
+        if not _check_pip_installed(env_name):
+            click.echo(
+                f"pip not installed via '{env_file}'. Additionally installing pip..."
+            )
+            subprocess.run(
+                ["conda", "install", "-y", "-n", env_name, "pip"],
+                check=True,
+            )
+        click.echo(f"Installing vhmodels into '{env_name}'...")
+        project_root = Path(__file__).resolve().parent.parent.parent
+        subprocess.run(
+            [
+                "conda",
+                "run",
+                "-n",
+                env_name,
+                "python",
+                "-m",
+                "pip",
+                "install",
+                "-e",
+                str(project_root),
+            ],
+            check=True,
+        )
+
         click.echo(f"Successfully created {env_name}.")
     except subprocess.CalledProcessError:
         click.echo(

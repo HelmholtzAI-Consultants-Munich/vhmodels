@@ -1,55 +1,40 @@
 # Virtual-Human-CHC
 
-This repository contains the package 'virtual-human-chc' (currently named vhmodels). Its goal is to unify and orchestrate multiple deep learning models developed at Helmholtz Munich - without tightly coupling or reimplementing them.
+This repository contains the vhmodels package. Its goal is to unify access to multiple deep learning models developed at Helmholtz Munich.
 
 ## Core concept
-Each model Lives in its own directory, has its own Conda environment, Docker image, or Singularity image and is executed via a subprocess.
 
-## Folder structure
-```
-virtual_human_chc
-├───example_data # Example inputs/outputs (also available on HuggingFace)
-│   ├───DinoBloom
-│   └───MolE
-├───notebooks # Example notebooks demonstrating usage
-├───tests # Tests for core model functionality
-└───vhmodels
-    ├───envs # Templates for Docker and Singularity environments
-    ├───models # Model implementations + environments + metadata
-    │   ├───DinoBloom
-    │   ├───Hyformer
-    │   ├───MolE
-    │   └───ProtTrans
-    ├───utils # Utility functions
-    └───vh_checker # CLI + base model interface
-```
+Each model lives in its own directory, has its own Conda environment (with Apptainer/Singularity support planned), and is executed by the `vhmodels` package via a subprocess.
 
 ## Installation
 
-From the root directory (```virtual_human_chc```), run:
+From the root directory (`virtual_human_chc`), run:
 
 ```
-pip install -e .
+pip install -e ".[cli]"
 ```
+
+You also need to have conda installed.
 
 ## CLI Usage
-
 ### List available models:
-```vh-checker list```
+```
+vh-checker list
+```
 
-### Create ```conda``` environment:
-```vh-checker create-env <model_name>```
+### Create `conda` environment:
+```
+vh-checker create-env <model_name>
+```
 
-Example: ```vh-checker create-env dinobloom```
-
-### Create ```Docker``` image:
-```vh-checker create-docker-image <model_name>```
-
-Example: ```vh-checker create-docker-image dinobloom```
+Example:
+```
+vh-checker create-env dinobloom
+```
 
 
 ## Quick start
-Simple examples how the models can be used. To use the models, you should first create the corresponding ```conda```/```Docker``` environment.
+Simple examples how the models can be used. To use the models, you should first create the corresponding `conda` environment.
 
 ### DinoBloom
 
@@ -96,6 +81,25 @@ import vhmodels
 model = vhmodels.load_model(project='mole')
 results = model.embed(input='example_data/MolE/sequences.smiles')
 print(results)
+```
+
+## Folder structure
+```
+virtual_human_chc
+├───example_data # Example inputs/outputs (also available on HuggingFace)
+│   ├───DinoBloom
+│   └───MolE
+├───notebooks # Example notebooks demonstrating usage
+├───tests # Tests for core model functionality
+└───vhmodels
+    ├───envs # Templates for Apptainer/Singularity environments
+    ├───models # Model implementations + environments + metadata
+    │   ├───DinoBloom
+    │   ├───Hyformer
+    │   ├───MolE
+    │   └───ProtTrans
+    ├───utils # Utility functions
+    └───vh_checker # CLI + base model interface
 ```
 
 ## TODOs

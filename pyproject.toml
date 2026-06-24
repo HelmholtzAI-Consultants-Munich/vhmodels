@@ -7,13 +7,12 @@ name = "vhmodels"
 version = "0.1.0"
 description = "Virtual Human CHC Model Zoo"
 dependencies = [
-    "click",
-    "pyyaml",
-    "tabulate",
-    "rich",
-    "pandas",
-    "pytest"
+    "pip>=26.1.2",
 ]
+
+[project.optional-dependencies]
+cli = ["click", "rich"]
+dev = ["pytest"]
 
 [project.scripts]
 vh-checker = "vhmodels.vh_checker.cli:main"

@@ -76,15 +76,17 @@ def test_conda_is_available_false(monkeypatch):
     assert CondaBackend("vhmodels-mole").is_available() is False
 
 
-def test_conda_subprocess_env_makes_package_importable():
-    # Until vhmodels is installed into the env, the host source tree must be on
-    # PYTHONPATH so `python -m vhmodels.vh_checker.embed` resolves.
+def test_conda_subprocess_env_strips_pythonpath(monkeypatch):
+    # vhmodels is installed into the env, so PYTHONPATH is unnecessary and a
+    # host entry could shadow the env's packages -- it must be removed.
+    monkeypatch.setenv("PYTHONPATH", "/some/host/path")
     env = CondaBackend("vhmodels-mole").subprocess_env()
-    assert backends._PROJECT_ROOT in env["PYTHONPATH"]
+    assert "PYTHONPATH" not in env
 
 
-def test_conda_subprocess_env_preserves_existing_pythonpath(monkeypatch):
-    monkeypatch.setenv("PYTHONPATH", "/some/existing/path")
+def test_conda_subprocess_env_passes_other_vars_through(monkeypatch):
+    # Everything except PYTHONPATH is preserved for the model's benefit.
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
+    monkeypatch.delenv("PYTHONPATH", raising=False)
     env = CondaBackend("vhmodels-mole").subprocess_env()
-    assert "/some/existing/path" in env["PYTHONPATH"]
-    assert backends._PROJECT_ROOT in env["PYTHONPATH"]
+    assert env["CUDA_VISIBLE_DEVICES"] == "1"

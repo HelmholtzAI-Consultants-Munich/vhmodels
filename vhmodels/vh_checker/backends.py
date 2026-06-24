@@ -10,11 +10,6 @@ from abc import ABC, abstractmethod
 import os
 import subprocess
 
-# Repo root (…/virtual_human_chc), three levels up from this file.
-_PROJECT_ROOT = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
-
 # The runner module executed inside the isolated environment.
 _RUNNER = ["python", "-m", "vhmodels.vh_checker.embed"]
 
@@ -57,12 +52,13 @@ class CondaBackend(RuntimeBackend):
         return self.env_name in result.stdout
 
     def subprocess_env(self):
-        # Make the host source tree importable inside the env so `python -m
-        # vhmodels.vh_checker.embed` resolves. This is superseded in a later
-        # step, once `vh-checker create-env` installs vhmodels into the env and
-        # the PYTHONPATH injection can be dropped entirely.
+        # vhmodels is installed into the env by `vh-checker create-env`, so no
+        # PYTHONPATH is needed for the runner or model discovery. Strip any
+        # inherited PYTHONPATH so a host entry cannot shadow the env's packages.
+        # Everything else (PATH, CUDA_VISIBLE_DEVICES, HF_HOME, ...) is passed
+        # through.
         env = os.environ.copy()
-        env["PYTHONPATH"] = _PROJECT_ROOT + os.pathsep + env.get("PYTHONPATH", "")
+        env.pop("PYTHONPATH", None)
         return env
 
 
