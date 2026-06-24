@@ -6,9 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "vhmodels"
 version = "0.1.0"
 description = "Virtual Human CHC Model Zoo"
-dependencies = [
-    "pip>=26.1.2",
-]
+dependencies = []
 
 [project.optional-dependencies]
 cli = ["click", "rich"]
