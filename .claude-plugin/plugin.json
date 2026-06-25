@@ -1,0 +1,6 @@
+{
+  "name": "vhmodels",
+  "version": "0.1.0",
+  "description": "Helmholtz Munich model zoo — unified embed API for DinoBloom, Hyformer, ProtTrans, MolE.",
+  "author": { "name": "Virtual Human CHC" }
+}
