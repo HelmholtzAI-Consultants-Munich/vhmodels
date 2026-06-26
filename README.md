@@ -104,3 +104,10 @@ print(results)
 2. Implement Apptainer image
 3. DinoBloom doesn't work when images are directly passed to the function, but it should (images can't be directly serilalized, but solutions are available)
 4. Implement test for the models in folder 'tests'
+
+## Installing ai skills:
+Use you IDE's customize->add plugin/marketplace or just copy the content of the skills folder in your project under (e.g. for cursor) .cursor/skills/...\
+For more details: 
+- [claude code](https://code.claude.com/docs/en/skills)
+- [cursor](https://cursor.com/docs/skills)
+- [codex](https://developers.openai.com/codex/skills)
