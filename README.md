@@ -42,8 +42,8 @@ Simple examples how the models can be used. To use the models, you should first 
 import vhmodels
 
 model = vhmodels.load_model(project='dinobloom', model='s')
-result = model.embed(input='example_data/DinoBloom/001.bmp')
-print(result)
+results = model.embed(input='example_data/DinoBloom/001.bmp')
+print(results)
 ```
 
 ### Hyformer
