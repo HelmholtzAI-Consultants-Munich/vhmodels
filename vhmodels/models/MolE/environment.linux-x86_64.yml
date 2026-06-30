@@ -7,8 +7,8 @@ dependencies:
   - rdkit=2022.3.3
   - pip
   - pip:
-    - --extra-index-url https://download.pytorch.org/whl/cu118
-    - torch==2.9.1+cu118
+    - --extra-index-url https://download.pytorch.org/whl/cu126
+    - torch==2.9.1+cu126
     - numpy==1.24.3
     - xgboost==1.6.2
     - pandas>=2.1
