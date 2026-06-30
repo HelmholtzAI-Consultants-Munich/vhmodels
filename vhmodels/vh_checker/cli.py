@@ -7,6 +7,7 @@ from vhmodels.registry import MODEL_REGISTRY
 import click
 import subprocess
 import json
+import platform
 from pathlib import Path
 from rich.console import Console
 from rich.table import Table
@@ -71,6 +72,13 @@ def _check_pip_installed(env_name):
     return result.returncode == 0
 
 
+def _determine_current_platform():
+    system_map = {"Linux": "linux", "Darwin": "macos"}
+    current_system = system_map.get(platform.system(), platform.system().lower())
+    current_machine = platform.machine()
+    return f"{current_system}-{current_machine}"
+
+
 @main.command()
 @click.argument("project")
 def create_env(project):
@@ -81,6 +89,14 @@ def create_env(project):
 
     if project not in MODEL_REGISTRY.keys():
         click.echo(f"Error: Model '{project}' is not registered.")
+        return
+
+    supported_platforms = MODEL_REGISTRY[project]["supported_platforms"]
+    current_platform = _determine_current_platform()
+    if current_platform not in supported_platforms:
+        click.echo(
+            f"Error: current platform '{current_platform}' is not supported; supported platforms are: {', '.join(supported_platforms)}"
+        )
         return
 
     env_name = f"vhmodels-{project}"  # model_cls.env_name
@@ -101,21 +117,22 @@ def create_env(project):
         click.echo(f"Error: Could not find directory for project {project}")
         return
 
-    env_file = target_dir / "environment.yml"
+    env_file = MODEL_REGISTRY[project]["environment_files"][current_platform]
+    env_path = target_dir / env_file
 
-    if not env_file.exists():
-        click.echo(f"Error: environment.yml not found at {env_file}")
+    if not env_path.exists():
+        click.echo(f"Error: environment.yml not found at {env_path}")
         return
 
     click.echo(f"Creating environment '{env_name}'...")
     try:
         subprocess.run(
-            ["conda", "env", "create", "-n", env_name, "-f", str(env_file)], check=True
+            ["conda", "env", "create", "-n", env_name, "-f", str(env_path)], check=True
         )
         # install vhmodels for communication with host
         if not _check_pip_installed(env_name):
             click.echo(
-                f"pip not installed via '{env_file}'. Additionally installing pip..."
+                f"pip not installed via '{env_path}'. Additionally installing pip..."
             )
             subprocess.run(
                 ["conda", "install", "-y", "-n", env_name, "pip"],

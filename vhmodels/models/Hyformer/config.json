@@ -1,5 +1,9 @@
 {
     "name": "hyformer",
+    "supported_platforms": ["linux-x86_64"],
+    "environment_files": {
+      "linux-x86_64": "environment.linux-x86_64.yml"
+    },
     "conda_env": "vhmodels-hyformer",
     "class_path": "Hyformer.model.Hyformer",
     "description": "A joint transformer-based model that unifies a generative decoder with a predictive encoder",
