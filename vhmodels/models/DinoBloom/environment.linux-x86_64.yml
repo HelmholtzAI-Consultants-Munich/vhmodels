@@ -12,4 +12,4 @@ dependencies:
     - --index-url https://download.pytorch.org/whl/cu126
     - torch==2.9.1+cu126
     - torchvision==0.24.1+cu126
-    - huggingface_hub==1.1.7
+    - huggingface_hub
