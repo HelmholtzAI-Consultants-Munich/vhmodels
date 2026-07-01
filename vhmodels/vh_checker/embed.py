@@ -1,13 +1,54 @@
 # The file contains the necessary to run the function 'embed' for the given model.
 # It runs *inside* the model's isolated environment as a subprocess. The parent
-# (ModelProxy) sends the input as a JSON document on stdin and reads the result
+# (ModelProxy) sends newline-delimited JSON messages on stdin and reads the result
 # framed between RESULT_MARKERs on stdout.
 from vhmodels.vh_checker.base import BaseModel
-from vhmodels.vh_checker.protocol import RESULT_MARKER
+from vhmodels.vh_checker.protocol import (
+    EMBED_MESSAGE_TYPE,
+    LOAD_MESSAGE_TYPE,
+    MESSAGE_TYPE_KEY,
+    RESULT_MARKER,
+)
 
 import argparse
 import json
 import sys
+
+
+def _parse_request_messages(payload):
+    messages = []
+    for line in payload.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        messages.append(json.loads(line))
+    return messages
+
+
+def _require_message_type(message, expected_type):
+    message_type = message.get(MESSAGE_TYPE_KEY)
+    if message_type != expected_type:
+        raise ValueError(
+            f"Expected message type '{expected_type}', got '{message_type}'."
+        )
+    return message
+
+
+def _dispatch_embed(instance, model_name, messages):
+    if len(messages) < 2:
+        raise ValueError(
+            "Expected exactly one load message followed by one embed message."
+        )
+
+    load_message = _require_message_type(messages[0], LOAD_MESSAGE_TYPE)
+    load_kwargs = load_message.get("load_kwargs") or {}
+    instance.load_model(model_name, **load_kwargs)
+
+    operation_message = messages[1]
+    operation_type = operation_message.get(MESSAGE_TYPE_KEY)
+    if operation_type == EMBED_MESSAGE_TYPE:
+        return instance.embed(operation_message.get("input"))
+    raise ValueError(f"Unknown message type '{operation_type}'.")
 
 
 def main():
@@ -19,18 +60,14 @@ def main():
     model_cls = BaseModel.get_class(args.project)
 
     try:
-        # Read the input document from stdin. Using stdin (rather than a CLI
-        # argument) avoids the OS argument-length limit on large inputs.
+        # Read tagged request messages from stdin. Using stdin (rather than a
+        # CLI argument) avoids the OS argument-length limit on large inputs.
         payload = sys.stdin.read()
-        input_data = json.loads(payload) if payload.strip() else None
+        messages = _parse_request_messages(payload)
 
         # Instantiate and load weights (this happens inside the sub-env).
         instance = model_cls()
-        instance.load_model(args.model)
-
-        # Execute embedding. The model returns its own envelope, e.g.
-        # {"output": [...]}; we emit it verbatim and let the parent unwrap.
-        result = instance.embed(input_data)
+        result = _dispatch_embed(instance, args.model, messages)
 
         # Frame the result so the parent can extract it regardless of any other
         # output libraries may have written to stdout.
