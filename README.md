@@ -8,9 +8,9 @@ Each model lives in its own directory, has its own Conda environment (with Appta
 
 ## Installation
 
-From the root directory (`virtual_human_chc`), run:
-
 ```
+git clone https://github.com/HelmholtzAI-Consultants-Munich/vhmodels.git
+cd vhmodels
 pip install -e ".[cli]"
 ```
 
@@ -105,10 +105,3 @@ virtual_human_chc
     ├───utils # Utility functions
     └───vh_checker # CLI + base model interface
 ```
-
-## TODOs
-
-1. Implement 'predict' for Mole and ProtTrans and 'generate' for ProtTrans. I thought that it could be best to implement the files in 'vh-checker' folders for the predict and generate function. I'm not sure if this is the best solution.
-2. Implement Apptainer image
-3. DinoBloom doesn't work when images are directly passed to the function, but it should (images can't be directly serilalized, but solutions are available)
-4. Implement test for the models in folder 'tests'
