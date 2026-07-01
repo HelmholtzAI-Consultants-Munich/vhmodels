@@ -6,9 +6,15 @@ import subprocess
 
 import pytest
 
+from vhmodels.vh_checker import embed as embed_runner
 from vhmodels.vh_checker import factory
-from vhmodels.vh_checker.factory import _extract_result, _run_subprocess
-from vhmodels.vh_checker.protocol import RESULT_MARKER
+from vhmodels.vh_checker.factory import _extract_result, _run_subprocess, load_model
+from vhmodels.vh_checker.protocol import (
+    EMBED_MESSAGE_TYPE,
+    LOAD_MESSAGE_TYPE,
+    MESSAGE_TYPE_KEY,
+    RESULT_MARKER,
+)
 
 
 def _frame(obj):
@@ -147,3 +153,107 @@ def test_terminate_group_escalates_sigterm_then_sigkill(monkeypatch):
 
     # Graceful first, then forceful
     assert sent == [signal.SIGTERM, signal.SIGKILL]
+
+
+# --- NDJSON request path ---------------------------------------------------
+
+
+def test_modelproxy_embed_sends_ndjson_messages(monkeypatch):
+    captured = {}
+
+    def fake_run_subprocess(cmd, payload, subprocess_env, timeout):
+        captured["cmd"] = cmd
+        captured["payload"] = payload
+        captured["subprocess_env"] = subprocess_env
+        captured["timeout"] = timeout
+        return (_frame({"output": {"prediction": 42}}), "")
+
+    monkeypatch.setattr(factory, "_run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(
+        "vhmodels.vh_checker.backends.CondaBackend.is_available", lambda self: True
+    )
+
+    model = load_model("dinobloom", model="s", foo="bar", answer=42)
+    result = model.embed({"text": "hello"})
+
+    messages = [json.loads(line) for line in captured["payload"].splitlines()]
+    assert messages == [
+        {
+            MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
+            "load_kwargs": {"foo": "bar", "answer": 42},
+        },
+        {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": {"text": "hello"}},
+    ]
+    assert result == {"prediction": 42}
+
+
+def test_load_model_stores_load_kwargs():
+    model = load_model("dinobloom", foo="bar")
+    assert model.load_kwargs == {"foo": "bar"}
+
+
+def test_child_dispatch_forwards_load_kwargs_and_embed_input():
+    calls = []
+
+    class FakeInstance:
+        def load_model(self, model, **kwargs):
+            calls.append(("load_model", model, kwargs))
+
+        def embed(self, input):
+            calls.append(("embed", input))
+            return {"output": {"prediction": 7}}
+
+    result = embed_runner._dispatch_embed(
+        FakeInstance(),
+        "s",
+        [
+            {MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE, "load_kwargs": {"foo": "bar"}},
+            {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": {"text": "hello"}},
+        ],
+    )
+
+    assert calls == [
+        ("load_model", "s", {"foo": "bar"}),
+        ("embed", {"text": "hello"}),
+    ]
+    assert result == {"output": {"prediction": 7}}
+
+
+def test_child_dispatch_treats_missing_load_kwargs_as_empty():
+    calls = []
+
+    class FakeInstance:
+        def load_model(self, model, **kwargs):
+            calls.append(("load_model", model, kwargs))
+
+        def embed(self, input):
+            calls.append(("embed", input))
+            return {"output": input}
+
+    result = embed_runner._dispatch_embed(
+        FakeInstance(),
+        None,
+        [
+            {MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE},
+            {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": "hello"},
+        ],
+    )
+
+    assert calls == [("load_model", None, {}), ("embed", "hello")]
+    assert result == {"output": "hello"}
+
+
+def test_child_dispatch_unknown_message_type_fails():
+    class FakeInstance:
+        def load_model(self, model, **kwargs):
+            return None
+
+    with pytest.raises(ValueError, match="Unknown message type 'predict'"):
+        embed_runner._dispatch_embed(
+            FakeInstance(),
+            "s",
+            [
+                {MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE, "load_kwargs": {}},
+                {MESSAGE_TYPE_KEY: "predict", "input": "hello"},
+            ],
+        )

@@ -3,7 +3,12 @@
 # parent side of the parent<->child handover protocol (see protocol.py).
 
 from vhmodels.registry import MODEL_REGISTRY
-from vhmodels.vh_checker.protocol import RESULT_MARKER
+from vhmodels.vh_checker.protocol import (
+    EMBED_MESSAGE_TYPE,
+    LOAD_MESSAGE_TYPE,
+    MESSAGE_TYPE_KEY,
+    RESULT_MARKER,
+)
 from vhmodels.vh_checker.backends import get_backend
 
 import os
@@ -109,13 +114,20 @@ def _extract_result(stdout, stderr):
 
 class ModelProxy:
     def __init__(
-        self, project, env_name, model=None, runtime="conda", timeout=DEFAULT_TIMEOUT
+        self,
+        project,
+        env_name,
+        model=None,
+        runtime="conda",
+        timeout=DEFAULT_TIMEOUT,
+        load_kwargs=None,
     ):
         self.project = project
         self.model = model
         self.runtime = runtime
         self.env_name = env_name
         self.timeout = timeout
+        self.load_kwargs = load_kwargs or {}
         # Selecting the backend here fails fast on an unsupported runtime.
         self.backend = get_backend(runtime, env_name)
 
@@ -126,9 +138,18 @@ class ModelProxy:
                 f"Please run 'vh-checker create-env {self.project}' first."
             )
 
-        # The whole input is serialized to JSON and sent on the child's stdin.
-        # File-path inputs travel as JSON strings too; the model resolves them.
-        payload = json.dumps(input)
+        # The child reads one tagged JSON message per line from stdin.
+        payload = "\n".join(
+            [
+                json.dumps(
+                    {
+                        MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
+                        "load_kwargs": self.load_kwargs,
+                    }
+                ),
+                json.dumps({MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": input}),
+            ]
+        )
 
         script_args = ["--project", self.project]
         if self.model:
@@ -141,10 +162,14 @@ class ModelProxy:
         return _extract_result(stdout, stderr)
 
 
-def load_model(project, model=None, runtime="conda"):
+def load_model(project, model=None, runtime="conda", **load_kwargs):
     if project not in list(MODEL_REGISTRY.keys()):
         raise ValueError(f"Model '{project}' not found.")
 
     return ModelProxy(
-        project=project, env_name="vhmodels-" + project, model=model, runtime=runtime
+        project=project,
+        env_name="vhmodels-" + project,
+        model=model,
+        runtime=runtime,
+        load_kwargs=load_kwargs,
     )
