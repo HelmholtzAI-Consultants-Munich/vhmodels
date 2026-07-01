@@ -83,6 +83,10 @@ results = model.embed(input='example_data/MolE/sequences.smiles')
 print(results)
 ```
 
+## Adding models
+
+If you want to add your own model to `vhmodels`, please follow our [contribution guideline](model_contribution.md).
+
 ## Folder structure
 ```
 virtual_human_chc
