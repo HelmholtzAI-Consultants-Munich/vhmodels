@@ -33,6 +33,8 @@ def discover_models():
                     # Store everything we need for the dispatcher and the CLI
                     registry[model_name] = {
                         "name": model_name,
+                        "supported_platforms": data.get("supported_platforms", []),
+                        "environment_files": data.get("environment_files", {}),
                         "class_path": data.get("class_path"),
                         "conda_env": data.get("conda_env"),
                         "description": data.get(

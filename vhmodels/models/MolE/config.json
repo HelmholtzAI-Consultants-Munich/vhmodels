@@ -1,5 +1,10 @@
 {
     "name": "mole",
+    "supported_platforms": ["linux-x86_64", "macos-arm64"],
+    "environment_files": {
+      "linux-x86_64": "environment.linux-x86_64.yml",
+      "macos-arm64": "environment.macos-arm64.yml"
+    },
     "conda_env": "vhmodels-hyformer",
     "class_path": "MolE.model.MolE",
     "description": "MolE learns task-independent molecular representations of chemicals via Graph Isomorphism Networks (GINs)",
