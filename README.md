@@ -84,8 +84,14 @@ print(results)
 ```
 
 ## Adding models
-
 If you want to add your own model to `vhmodels`, please follow our [contribution guideline](model_contribution.md).
+
+## Installing ai skills:
+Use you IDE's customize->add plugin/marketplace or just copy the content of the skills folder in your project under (e.g. for cursor) .cursor/skills/...\
+For more details: 
+- [claude code](https://code.claude.com/docs/en/skills)
+- [cursor](https://cursor.com/docs/skills)
+- [codex](https://developers.openai.com/codex/skills)
 
 ## Folder structure
 ```

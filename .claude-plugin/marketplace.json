@@ -1,0 +1,11 @@
+{
+    "name": "vhmodels",
+    "owner": { "name": "Virtual Human CHC" },
+    "plugins": [
+      {
+        "name": "vhmodels",
+        "source": ".",
+        "description": "Helmholtz Munich model zoo — DinoBloom, Hyformer, ProtTrans, MolE"
+      }
+    ]
+}
