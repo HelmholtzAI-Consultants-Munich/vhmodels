@@ -1,18 +1,20 @@
-# Environment setup (Conda / Docker)
+# Environment setup (Conda / Apptainer)
 
-Embed needs a **model runtime** — isolated Conda env or Docker image per project. Host `pip install -e .` only installs the thin `vhmodels` proxy.
+Embed needs a **model runtime** — isolated Conda env or Apptainer image per project. Host `pip install -e "<repo_root>.[cli]"` only installs the thin `vhmodels` proxy + `vh-checker` CLI.
+
+**Platforms:** Linux and macOS only. No Windows support.
 
 ## When to use this reference
 
-- `conda --version` and `docker --version` both fail
-- `vh-checker create-env <project>` or `create-docker-image <project>` fails
+- `conda --version` and `apptainer --version` both fail
+- `vh-checker create-env <project>` or `create-apptainer-image <project>` fails
 - User on Helmholtz / corp network (Anaconda Miniconda often blocked)
 
 ## Diagnose (then stop probing)
 
 ```bash
 uname -s && uname -m
-command -v conda docker
+command -v conda apptainer
 ```
 
 Host Python (`uv`, `pip`, `poetry`) does **not** replace the model runtime.
@@ -35,8 +37,6 @@ conda --version
 |--------|--------|
 | Install prefix | `~/miniforge3` (override: `MINIFORGE_PREFIX`) |
 | Platforms | Darwin arm64/x86_64, Linux aarch64/x86_64/ppc64le |
-| Linux without curl | Script runs `apt-get install -y curl ca-certificates` when root |
-| Windows | Script prints URL for `Miniforge3-Windows-x86_64.exe`; user runs installer manually |
 
 Installer URLs (script picks automatically):
 
@@ -45,23 +45,25 @@ Installer URLs (script picks automatically):
 - `Miniforge3-Linux-aarch64.sh`
 - `Miniforge3-Linux-x86_64.sh`
 - `Miniforge3-Linux-ppc64le.sh`
-- `Miniforge3-Windows-x86_64.exe`
 
 Base: `https://github.com/conda-forge/miniforge/releases/latest/download/`
 
-## Docker alternative
+## Apptainer runtime
 
-If user prefers containers: [docs.docker.com/get-docker](https://docs.docker.com/get-docker/).
+**Docker not supported.** Use Apptainer on HPC or when Conda is unavailable.
+
+Install: [apptainer.org/docs/admin/main/installation.html](https://apptainer.org/docs/admin/main/installation.html)
 
 ```bash
-vh-checker create-docker-image <project>   # image: vhmodels-<project>
+apptainer --version
+vh-checker create-apptainer-image <project>   # image: vhmodels-<project>.sif
 ```
 
-Then `load_model(..., runtime="docker")`.
+Then `load_model(..., runtime="singularity")`.
 
-Apptainer/Singularity: planned, not in v0.1.
+Def template: `vhmodels/envs/Singularity` in repo checkout.
 
-## Create model env (after Conda or Docker works)
+## Create model env (after Conda or Apptainer works)
 
 **Conda** (default):
 
@@ -83,4 +85,5 @@ Some `environment.yml` files still list `defaults` or vendor channels; if `creat
 | `conda` not found | Run `scripts/install-miniforge.sh`, `source ~/miniforge3/etc/profile.d/conda.sh` |
 | SSL / cert error to `anaconda.com` | Use Miniforge script (GitHub), not Miniconda |
 | Environment does not exist | `vh-checker create-env <project>` |
+| SIF not found | `vh-checker create-apptainer-image <project>` |
 | Import errors in host Python | Expected — inference runs in model sub-env |

@@ -56,9 +56,8 @@ resolve_installer() {
       [[ "${arch}" == "arm64" ]] && linux_arch=aarch64
       echo "${BASE_URL}/Miniforge3-Linux-${linux_arch}.sh"
       ;;
-    MINGW* | MSYS* | CYGWIN*)
-      echo "error: native Windows is not supported by this script." >&2
-      echo "Download and run: ${BASE_URL}/Miniforge3-Windows-x86_64.exe" >&2
+    MINGW* | MSYS* | CYGWIN* | Windows*)
+      echo "error: Windows is not supported." >&2
       exit 1
       ;;
     *)

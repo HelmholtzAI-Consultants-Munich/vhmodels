@@ -6,14 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "vhmodels"
 version = "0.1.0"
 description = "Virtual Human CHC Model Zoo"
-dependencies = [
-    "click",
-    "pyyaml",
-    "tabulate",
-    "rich",
-    "pandas",
-    "pytest"
-]
+dependencies = []
+
+[project.optional-dependencies]
+cli = ["click", "rich"]
+dev = ["pytest"]
 
 [project.scripts]
 vh-checker = "vhmodels.vh_checker.cli:main"
@@ -21,3 +18,8 @@ vh-checker = "vhmodels.vh_checker.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["vhmodels*"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: tests that require external runtimes, conda environments, model weights, downloads, or heavy model dependencies",
+]

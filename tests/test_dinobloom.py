@@ -1,22 +1,25 @@
 # The file contains (basic) tests for DinoBloom
 import pytest
 import vhmodels
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import json
 
 
+@pytest.mark.integration
 def test_dinobloom_inference():
     model = vhmodels.load_model(project="dinobloom", model="s")
     result = model.embed(input="example_data/DinoBloom/001.bmp")
     assert result is not None
 
 
+@pytest.mark.integration
 def test_transform_output_format():
     model = vhmodels.load_model(project="dinobloom", model="s")
     result = model.embed(input="example_data/DinoBloom/001.bmp")
     assert isinstance(result, (dict, list))
 
 
+@pytest.mark.integration
 def test_invalid_input_file():
     import vhmodels
 
@@ -26,14 +29,23 @@ def test_invalid_input_file():
 
 
 def test_transform_subprocess_mock():
-    fake_output = json.dumps({"output": {"prediction": 42}})
+    from vhmodels.vh_checker.protocol import RESULT_MARKER
 
-    mock_result = MagicMock()
-    mock_result.stdout = fake_output
+    # The model returns its own envelope {"output": ...}; the child emits it
+    # verbatim framed by RESULT_MARKER, and the parent unwraps a single "output".
+    fake_model_result = {"output": {"prediction": 42}}
+    framed_stdout = f"{RESULT_MARKER}{json.dumps(fake_model_result)}{RESULT_MARKER}\n"
 
-    with patch("vhmodels.vh_checker.factory.ModelProxy._env_exists", return_value=True):
-        with patch("subprocess.run", return_value=mock_result):
+    with patch(
+        "vhmodels.vh_checker.backends.CondaBackend.is_available", return_value=True
+    ):
+        with patch(
+            "vhmodels.vh_checker.factory._run_subprocess",
+            return_value=(framed_stdout, ""),
+        ):
             model = vhmodels.load_model(project="dinobloom", model="s")
             result = model.embed(input="dummy")
 
+            # Single unwrap, not double-wrapped.
             assert result == {"prediction": 42}
+            assert result != fake_model_result

@@ -1,15 +1,14 @@
 # This file contains all the CLI functions available through the CLI (try vh-checker <command> <project_name>)
 # With the CLI, one can list all available models
-# and create conda envs, Docker images and Apptainer images for the models
+# and create conda envs and Apptainer images for the models
 
 from vhmodels.registry import MODEL_REGISTRY
 
 import click
 import subprocess
 import json
+import platform
 from pathlib import Path
-import io
-import tarfile
 from rich.console import Console
 from rich.table import Table
 
@@ -63,6 +62,23 @@ def _check_conda_installed():
         return False
 
 
+def _check_pip_installed(env_name):
+    result = subprocess.run(
+        ["conda", "run", "-n", env_name, "python", "-m", "pip", "--version"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def _determine_current_platform():
+    system_map = {"Linux": "linux", "Darwin": "macos"}
+    current_system = system_map.get(platform.system(), platform.system().lower())
+    current_machine = platform.machine()
+    return f"{current_system}-{current_machine}"
+
+
 @main.command()
 @click.argument("project")
 def create_env(project):
@@ -75,7 +91,14 @@ def create_env(project):
         click.echo(f"Error: Model '{project}' is not registered.")
         return
 
-    # model_cls = BaseModel.get_class(project)
+    supported_platforms = MODEL_REGISTRY[project]["supported_platforms"]
+    current_platform = _determine_current_platform()
+    if current_platform not in supported_platforms:
+        click.echo(
+            f"Error: current platform '{current_platform}' is not supported; supported platforms are: {', '.join(supported_platforms)}"
+        )
+        return
+
     env_name = f"vhmodels-{project}"  # model_cls.env_name
 
     # Locate the model directory dynamically (handling potential capitalization)
@@ -94,107 +117,50 @@ def create_env(project):
         click.echo(f"Error: Could not find directory for project {project}")
         return
 
-    env_file = target_dir / "environment.yml"
+    env_file = MODEL_REGISTRY[project]["environment_files"][current_platform]
+    env_path = target_dir / env_file
 
-    if not env_file.exists():
-        click.echo(f"Error: environment.yml not found at {env_file}")
+    if not env_path.exists():
+        click.echo(f"Error: environment.yml not found at {env_path}")
         return
 
     click.echo(f"Creating environment '{env_name}'...")
     try:
         subprocess.run(
-            ["conda", "env", "create", "-n", env_name, "-f", str(env_file)], check=True
+            ["conda", "env", "create", "-n", env_name, "-f", str(env_path)], check=True
         )
+        # install vhmodels for communication with host
+        if not _check_pip_installed(env_name):
+            click.echo(
+                f"pip not installed via '{env_path}'. Additionally installing pip..."
+            )
+            subprocess.run(
+                ["conda", "install", "-y", "-n", env_name, "pip"],
+                check=True,
+            )
+        click.echo(f"Installing vhmodels into '{env_name}'...")
+        project_root = Path(__file__).resolve().parent.parent.parent
+        subprocess.run(
+            [
+                "conda",
+                "run",
+                "-n",
+                env_name,
+                "python",
+                "-m",
+                "pip",
+                "install",
+                "-e",
+                str(project_root),
+            ],
+            check=True,
+        )
+
         click.echo(f"Successfully created {env_name}.")
     except subprocess.CalledProcessError:
         click.echo(
             "Failed to create environment. Ensure Conda is installed and functional."
         )
-
-
-def _check_docker_installed():
-    """Check if Docker is installed and in PATH."""
-    try:
-        subprocess.run(
-            ["docker", "--version"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-        )
-        return True
-    except FileNotFoundError:
-        click.echo("Error: Docker is not installed or not found in PATH.")
-        return False
-    except subprocess.CalledProcessError:
-        click.echo(
-            "Error: Docker is installed but returned an error. Check your Docker installation."
-        )
-        return False
-
-
-@main.command()
-@click.argument("project")
-def create_docker_image(project):
-    """Build Docker image dynamically in-memory for a specific project."""
-
-    # Docker check
-    if not _check_docker_installed():
-        return
-
-    image_name = f"vhmodels-{project}"
-    project_root = Path(__file__).parent.parent.parent
-
-    # Paths
-    dockerfile_template_path = project_root / "vhmodels" / "envs" / "Dockerfile"
-    env_yml_path = project_root / "vhmodels" / "models" / project / "environment.yml"
-
-    if not dockerfile_template_path.exists() or not env_yml_path.exists():
-        click.echo("Dockerfile template or environment.yml not found.")
-        return
-
-    # Read Dockerfile template
-    dockerfile_str = dockerfile_template_path.read_text()
-    dockerfile_str = dockerfile_str.replace("{project}", project)
-
-    # Create in-memory tar context
-    context = io.BytesIO()
-    with tarfile.open(fileobj=context, mode="w") as tar:
-        # Add Dockerfile
-        df_bytes = dockerfile_str.encode("utf-8")
-        df_info = tarfile.TarInfo(name="Dockerfile")
-        df_info.size = len(df_bytes)
-        tar.addfile(df_info, io.BytesIO(df_bytes))
-
-        # Add environment.yml at root
-        env_bytes = env_yml_path.read_bytes()
-        env_info = tarfile.TarInfo(name="environment.yml")
-        env_info.size = len(env_bytes)
-        tar.addfile(env_info, io.BytesIO(env_bytes))
-
-        # Add all other project files
-        for path in project_root.rglob("*"):
-            if (
-                path.is_file()
-                and not path.name.startswith(".")
-                and "vhmodels.egg-info" not in path.parts
-            ):
-                arcname = path.relative_to(project_root)
-                tar.add(str(path), arcname=str(arcname))
-
-    context.seek(0)
-
-    # Build the image
-    try:
-        subprocess.run(
-            ["docker", "build", "-t", image_name, "-"],
-            input=context.read(),
-            check=True,
-            text=False,
-        )
-        click.echo(f"Successfully created Docker image '{image_name}'.")
-    except subprocess.CalledProcessError as e:
-        click.echo("Failed to build Docker image.")
-        click.echo(e.stderr)
 
 
 # TODO: Implement function the creates the Apptainer image
