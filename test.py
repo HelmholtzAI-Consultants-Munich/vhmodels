@@ -18,5 +18,5 @@ import vhmodels
 
 model = vhmodels.load_model(project="prottrans", model="prot_t5_xl_uniref50")
 
-results = model.embed(input=["PRTEINO", "SEQWENCE"])
+results = model.embed(input='example_data/MolE/sequences.smiles')
 print(results)

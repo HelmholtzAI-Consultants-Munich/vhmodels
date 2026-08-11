@@ -35,6 +35,7 @@ def discover_models():
                         "name": model_name,
                         "supported_platforms": data.get("supported_platforms", []),
                         "environment_files": data.get("environment_files", {}),
+                        "apptainer": data.get("apptainer", {}),
                         "class_path": data.get("class_path"),
                         "conda_env": data.get("conda_env"),
                         "description": data.get(

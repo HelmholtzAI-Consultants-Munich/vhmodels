@@ -4,37 +4,71 @@ This repository contains the vhmodels package. Its goal is to unify access to mu
 
 ## Core concept
 
-Each model lives in its own directory, has its own Conda environment (with Apptainer/Singularity support planned), and is executed by the `vhmodels` package via a subprocess.
+Each model lives in its own directory with its implementation, metadata, and
+runtime dependencies. `vhmodels` executes it in either a per-model Conda
+environment or an Apptainer container. Apptainer images use Ubuntu 24.04 and a
+uv-managed Python environment at `/opt/venv`.
 
 ## Installation
 
-```
+```bash
 git clone https://github.com/HelmholtzAI-Consultants-Munich/vhmodels.git
 cd vhmodels
 pip install -e ".[cli]"
 ```
 
-You also need to have conda installed. We strongly recommend [miniforge](https://conda-forge.org/download/).
+For Conda execution, install [Miniforge](https://conda-forge.org/download/). For
+Apptainer execution, install Apptainer on Linux/HPC or Lima on macOS
+(`brew install lima`); `vhmodels` manages the Lima VM automatically. You do not
+need to install uv on the host.
 
-## CLI Usage
-### List available models:
-```
+## CLI usage
+
+### List available models
+
+```bash
 vh-checker list
 ```
 
-### Create `conda` environment:
-```
+### Create a Conda environment
+
+```bash
 vh-checker create-env <model_name>
 ```
 
 Example:
-```
+
+```bash
 vh-checker create-env dinobloom
 ```
 
+### Create an Apptainer image
+
+```bash
+vh-checker create-apptainer-image <model_name>
+```
+
+By default this creates `vhmodels-<model_name>.sif` in the current directory. Run a model from that image with e.g.:
+
+```python
+import vhmodels
+
+model = vhmodels.load_model(
+    project="dinobloom", model="s", runtime="apptainer"
+)
+```
+
+Pass `image_path="/path/to/image.sif"` to `load_model` when the image is stored
+elsewhere. The CLI equivalent is
+`vh-checker run ... --runtime apptainer --image-path /path/to/image.sif`.
+Set `APPTAINER_NV=1` when running directly on an NVIDIA Linux/HPC host to expose
+its GPU to the container. The Lima path on macOS is CPU-only.
 
 ## Quick start
-Simple examples how the models can be used. To use the models, you should first create the corresponding `conda` environment.
+
+First create the corresponding Conda environment or Apptainer image. The
+examples below use the default Conda runtime; pass `runtime="apptainer"` to use
+an image.
 
 ### DinoBloom
 
@@ -86,24 +120,30 @@ print(results)
 ## Adding models
 If you want to add your own model to `vhmodels`, please follow our [contribution guideline](model_contribution.md).
 
-## Installing ai skills:
-Use you IDE's customize->add plugin/marketplace or just copy the content of the skills folder in your project under (e.g. for cursor) .cursor/skills/...\
-For more details: 
+## Installing AI skills
+
+Use your IDE's plugin or marketplace interface, or copy the contents of the
+`skills` directory into the corresponding project directory (for example,
+`.cursor/skills/` for Cursor).
+
+For more details:
+
 - [claude code](https://code.claude.com/docs/en/skills)
 - [cursor](https://cursor.com/docs/skills)
 - [codex](https://developers.openai.com/codex/skills)
 
 ## Folder structure
-```
-virtual_human_chc
-├───example_data # Example inputs/outputs (also available on HuggingFace)
+
+```text
+vhmodels
+├───example_data # Example inputs/outputs (also available on Hugging Face)
 │   ├───DinoBloom
 │   └───MolE
 ├───notebooks # Example notebooks demonstrating usage
 ├───tests # Tests for core model functionality
 └───vhmodels
-    ├───envs # Templates for Apptainer/Singularity environments
-    ├───models # Model implementations + environments + metadata
+    ├───envs # Template for Apptainer environments
+    ├───models # Implementations + Conda/uv dependencies + metadata
     │   ├───DinoBloom
     │   ├───Hyformer
     │   ├───MolE

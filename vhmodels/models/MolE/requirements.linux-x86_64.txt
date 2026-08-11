@@ -1,0 +1,18 @@
+setuptools
+rdkit==2022.3.3
+torch==2.9.1+cu126
+numpy==1.24.3
+xgboost==1.6.2
+pandas>=2.1
+PyYAML==6.0.1
+torch_geometric==2.5.0
+openpyxl==3.1.5
+pubchempy==1.0.4
+matplotlib==3.7.5
+seaborn==0.13.2
+tqdm==4.67.1
+umap-learn==0.5.5
+huggingface_hub
+array_record==0.4.0
+mole-package @ git+https://github.com/HelmholtzAI-Consultants-Munich/virtual_human_MolE.git@114e2ddb9e37905a5093c3b6591b176c21a35633#subdirectory=mole_package
+scikit-learn==1.7.2

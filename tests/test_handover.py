@@ -6,8 +6,8 @@ import subprocess
 
 import pytest
 
+from vhmodels.vh_checker import backends, factory
 from vhmodels.vh_checker import embed as embed_runner
-from vhmodels.vh_checker import factory
 from vhmodels.vh_checker.factory import _extract_result, _run_subprocess, load_model
 from vhmodels.vh_checker.protocol import (
     EMBED_MESSAGE_TYPE,
@@ -185,6 +185,138 @@ def test_modelproxy_embed_sends_ndjson_messages(monkeypatch):
         {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": {"text": "hello"}},
     ]
     assert result == {"prediction": 42}
+
+
+def test_modelproxy_apptainer_uses_sif_and_same_protocol(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run_subprocess(cmd, payload, subprocess_env, timeout):
+        captured["cmd"] = cmd
+        captured["payload"] = payload
+        captured["subprocess_env"] = subprocess_env
+        return (_frame({"output": [1, 2, 3]}), "")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(backends, "uses_lima", lambda: False)
+    monkeypatch.setattr(factory, "_run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(
+        "vhmodels.vh_checker.backends.ApptainerBackend.is_available",
+        lambda self: True,
+    )
+    monkeypatch.setattr(
+        "vhmodels.vh_checker.backends.ApptainerBackend.is_runtime_available",
+        lambda self: True,
+    )
+
+    model = load_model("dinobloom", model="s", runtime="apptainer", device="cpu")
+    result = model.embed("image.bmp")
+
+    assert captured["cmd"] == [
+        "apptainer",
+        "exec",
+        str(tmp_path / "vhmodels-dinobloom.sif"),
+        "/opt/venv/bin/python",
+        "-m",
+        "vhmodels.vh_checker.embed",
+        "--project",
+        "dinobloom",
+        "--model",
+        "s",
+    ]
+    assert [json.loads(line) for line in captured["payload"].splitlines()] == [
+        {
+            MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
+            "load_kwargs": {"device": "cpu"},
+        },
+        {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": "image.bmp"},
+    ]
+    assert "PYTHONPATH" not in captured["subprocess_env"]
+    assert result == [1, 2, 3]
+
+
+def test_apptainer_image_path_can_be_overridden(tmp_path):
+    image_path = tmp_path / "custom.sif"
+    model = load_model("mole", runtime="apptainer", image_path=image_path)
+    assert model.env_name == str(image_path.resolve())
+    assert model.backend.image_path == str(image_path.resolve())
+
+
+def test_missing_apptainer_image_has_runtime_specific_guidance(tmp_path):
+    image_path = tmp_path / "missing.sif"
+    model = load_model("mole", runtime="apptainer", image_path=image_path)
+    with pytest.raises(RuntimeError, match="create-apptainer-image mole"):
+        model.embed("sequences.smiles")
+
+
+def test_missing_apptainer_executable_has_runtime_specific_guidance(
+    monkeypatch, tmp_path
+):
+    image_path = tmp_path / "mole.sif"
+    image_path.touch()
+    monkeypatch.setattr(backends, "uses_lima", lambda: False)
+    model = load_model("mole", runtime="apptainer", image_path=image_path)
+    monkeypatch.setattr(model.backend, "is_runtime_available", lambda: False)
+    with pytest.raises(RuntimeError, match="executable is not available"):
+        model.embed("sequences.smiles")
+
+
+def test_modelproxy_apptainer_prepares_and_uses_lima(monkeypatch, tmp_path):
+    captured = {}
+    image_path = tmp_path / "dinobloom.sif"
+    image_path.touch()
+
+    def fake_run_subprocess(cmd, payload, subprocess_env, timeout):
+        captured["cmd"] = cmd
+        captured["payload"] = payload
+        return (_frame({"output": [42]}), "")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(backends, "uses_lima", lambda: True)
+    monkeypatch.setattr(factory, "_run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(
+        backends.ApptainerBackend,
+        "is_runtime_available",
+        lambda self: True,
+    )
+    monkeypatch.setattr(
+        backends.ApptainerBackend,
+        "prepare",
+        lambda self: captured.setdefault("prepared", True),
+    )
+
+    model = load_model(
+        "dinobloom", runtime="apptainer", image_path=image_path, device="cpu"
+    )
+    result = model.embed("image.bmp")
+
+    assert captured["prepared"] is True
+    assert captured["cmd"][:7] == [
+        "limactl",
+        "shell",
+        "--tty=false",
+        "--preserve-env",
+        "--workdir",
+        str(tmp_path.resolve()),
+        backends.LIMA_INSTANCE,
+    ]
+    assert captured["cmd"][7:10] == [
+        "apptainer",
+        "exec",
+        str(image_path.resolve()),
+    ]
+    assert [json.loads(line) for line in captured["payload"].splitlines()] == [
+        {
+            MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
+            "load_kwargs": {"device": "cpu"},
+        },
+        {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": "image.bmp"},
+    ]
+    assert result == [42]
+
+
+def test_image_path_is_rejected_for_conda(tmp_path):
+    with pytest.raises(ValueError, match="runtime='apptainer'"):
+        load_model("mole", image_path=tmp_path / "mole.sif")
 
 
 def test_load_model_stores_load_kwargs():

@@ -6,7 +6,7 @@ Embed needs a **model runtime** — isolated Conda env or Apptainer image per pr
 
 ## When to use this reference
 
-- `conda --version` and `apptainer --version` both fail
+- `conda --version` and the platform runtime (`apptainer` or `limactl`) both fail
 - `vh-checker create-env <project>` or `create-apptainer-image <project>` fails
 - User on Helmholtz / corp network (Anaconda Miniconda often blocked)
 
@@ -14,10 +14,12 @@ Embed needs a **model runtime** — isolated Conda env or Apptainer image per pr
 
 ```bash
 uname -s && uname -m
-command -v conda apptainer
+command -v conda apptainer limactl
 ```
 
-Host Python (`uv`, `pip`, `poetry`) does **not** replace the model runtime.
+Host Python tooling (`uv`, `pip`, `poetry`) does **not** replace the model
+runtime. The uv executable used to build an Apptainer image is supplied inside
+the image build, so it is not a host requirement.
 
 ## Install Miniforge (conda-forge) — default path
 
@@ -51,17 +53,40 @@ Base: `https://github.com/conda-forge/miniforge/releases/latest/download/`
 ## Apptainer runtime
 
 **Docker not supported.** Use Apptainer on HPC or when Conda is unavailable.
+Linux/x86_64 hosts, including HPC systems, require Apptainer. macOS hosts
+require Lima instead; `vhmodels` automatically creates and reuses its Linux VM.
+Apple Silicon uses VZ and Rosetta's fast translation mode.
 
-Install: [apptainer.org/docs/admin/main/installation.html](https://apptainer.org/docs/admin/main/installation.html)
+Linux install: [apptainer.org/docs/admin/main/installation.html](https://apptainer.org/docs/admin/main/installation.html)
+
+macOS install:
 
 ```bash
-apptainer --version
+brew install lima
+```
+
+```bash
 vh-checker create-apptainer-image <project>   # image: vhmodels-<project>.sif
 ```
 
-Then `load_model(..., runtime="singularity")`.
+On macOS, keep the checkout, SIF, and input data under your home directory. The
+generated Linux/AMD64 SIF can be copied to an x86_64 HPC system and run there
+directly.
 
-Def template: `vhmodels/envs/Singularity` in repo checkout.
+Each model's `config.json` supplies the Python version, Linux requirements file,
+and optional PyTorch backend. The Ubuntu 24.04 image uses uv during the build and
+installs the finished environment at `/opt/venv`. Completed uv downloads and
+managed Python archives are kept in the per-user build cache at
+`${XDG_CACHE_HOME:-~/.cache}/vhmodels/apptainer/uv`; the cache is not included in
+the SIF. Override it with `VHMODELS_APPTAINER_CACHE_DIR`, for example to use a
+fast per-user scratch filesystem on HPC. On macOS, the override must be under
+the user's home directory so Lima can access it. This cache reduces repeated
+downloads; rebuilding still creates and compresses a complete SIF, so it does
+not reduce the image size.
+
+Then `load_model(..., runtime="apptainer")`.
+
+Definition template: `vhmodels/envs/Apptainer` in the repository checkout.
 
 ## Create model env (after Conda or Apptainer works)
 
@@ -74,7 +99,8 @@ vh-checker create-env prottrans
 vh-checker create-env mole
 ```
 
-First run downloads large conda/pip deps and HuggingFace weights — warn user about time, disk, GPU.
+The first environment/image build and model run can download large dependencies
+and Hugging Face weights — warn the user about time, disk, and GPU requirements.
 
 Some `environment.yml` files still list `defaults` or vendor channels; if `create-env` fails on channel policy, Jonas's team may need a conda-forge-only rewrite.
 

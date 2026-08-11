@@ -19,6 +19,9 @@ vh-checker = "vhmodels.vh_checker.cli:main"
 where = ["."]
 include = ["vhmodels*"]
 
+[tool.setuptools.package-data]
+vhmodels = ["envs/*", "models/*/*.json", "models/*/*.txt", "models/*/*.yml"]
+
 [tool.pytest.ini_options]
 markers = [
     "integration: tests that require external runtimes, conda environments, model weights, downloads, or heavy model dependencies",

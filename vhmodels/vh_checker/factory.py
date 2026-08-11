@@ -1,20 +1,19 @@
-# This file contains the wrapper class ModelProxy
-# It controls what arguments are passed to the runner file and owns the
-# parent side of the parent<->child handover protocol (see protocol.py).
+"""Host-side model proxy and subprocess handover protocol."""
+
+import json
+import os
+import signal
+import subprocess
+from pathlib import Path
 
 from vhmodels.registry import MODEL_REGISTRY
+from vhmodels.vh_checker.backends import get_backend
 from vhmodels.vh_checker.protocol import (
     EMBED_MESSAGE_TYPE,
     LOAD_MESSAGE_TYPE,
     MESSAGE_TYPE_KEY,
     RESULT_MARKER,
 )
-from vhmodels.vh_checker.backends import get_backend
-
-import os
-import json
-import signal
-import subprocess
 
 DEFAULT_TIMEOUT = 600
 
@@ -133,10 +132,27 @@ class ModelProxy:
 
     def embed(self, input, **kwargs):
         if not self.backend.is_available():
+            if self.runtime == "apptainer":
+                raise RuntimeError(
+                    f"The Apptainer image '{self.env_name}' does not exist. "
+                    f"Please run 'vh-checker create-apptainer-image "
+                    f"{self.project}' first."
+                )
             raise RuntimeError(
                 f"The environment '{self.env_name}' does not exist. "
                 f"Please run 'vh-checker create-env {self.project}' first."
             )
+        if not self.backend.is_runtime_available():
+            if getattr(self.backend, "use_lima", False):
+                raise RuntimeError(
+                    "Lima is not available. On macOS, install it with "
+                    "'brew install lima' and ensure 'limactl' is in PATH."
+                )
+            raise RuntimeError(
+                "The Apptainer executable is not available. Install Apptainer "
+                "and ensure 'apptainer' is in PATH."
+            )
+        self.backend.prepare()
 
         # The child reads one tagged JSON message per line from stdin.
         payload = "\n".join(
@@ -162,13 +178,23 @@ class ModelProxy:
         return _extract_result(stdout, stderr)
 
 
-def load_model(project, model=None, runtime="conda", **load_kwargs):
+def load_model(project, model=None, runtime="conda", image_path=None, **load_kwargs):
     if project not in list(MODEL_REGISTRY.keys()):
         raise ValueError(f"Model '{project}' not found.")
 
+    env_name = "vhmodels-" + project
+    if runtime == "apptainer":
+        # Match the default output of ``create-apptainer-image``. Resolve the
+        # path now so changing the working directory between load and embed
+        # cannot silently select a different image.
+        image_path = image_path or f"{env_name}.sif"
+        env_name = str(Path(image_path).expanduser().resolve())
+    elif image_path is not None:
+        raise ValueError("image_path can only be used with runtime='apptainer'.")
+
     return ModelProxy(
         project=project,
-        env_name="vhmodels-" + project,
+        env_name=env_name,
         model=model,
         runtime=runtime,
         load_kwargs=load_kwargs,

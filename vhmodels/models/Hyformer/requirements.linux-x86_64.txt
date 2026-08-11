@@ -1,0 +1,16 @@
+setuptools
+numpy>=1.26,<2.0
+pandas==1.5.3
+rdkit==2023.9.2
+scipy==1.10.1
+tqdm
+transformers
+wandb
+torch==2.2.2+cu118
+torchvision==0.17.2+cu118
+torchaudio==2.2.2+cu118
+deepchem==2.8.0
+guacamol==0.5.5
+fcd==1.2
+pillow<10
+hyformer @ git+https://github.com/HelmholtzAI-Consultants-Munich/virtual_human_Hyformer.git@8f76a18efa28a3647b6e78283ef1d0bdf3250419#subdirectory=hyformer
