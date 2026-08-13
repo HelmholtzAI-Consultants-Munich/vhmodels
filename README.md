@@ -64,6 +64,25 @@ elsewhere. The CLI equivalent is
 Set `APPTAINER_NV=1` when running directly on an NVIDIA Linux/HPC host to expose
 its GPU to the container. The Lima path on macOS is CPU-only.
 
+An Apptainer-backed model starts one background instance lazily on its first
+`embed()` call. The model is loaded once in that instance and reused by later
+calls on the same model object. Call `model.close()` when finished, or use the
+model as a context manager; remaining instances are also stopped when Python
+exits normally. Abrupt termination may leave an instance behind; inspect with
+`apptainer instance list` and stop it with `apptainer instance stop <name>`.
+Bind mounts are fixed when the instance starts, so set
+`APPTAINER_BINDPATH` before the first `embed()` when inputs live outside
+Apptainer's default host mounts. Rebuild images created with an older version of
+`vhmodels`, since the persistent worker is installed by the image template.
+
+```python
+with vhmodels.load_model(
+    project="dinobloom", model="s", runtime="apptainer"
+) as model:
+    first = model.embed(input="first.bmp")
+    second = model.embed(input="second.bmp")  # reuses the loaded model
+```
+
 ## Quick start
 
 First create the corresponding Conda environment or Apptainer image. The

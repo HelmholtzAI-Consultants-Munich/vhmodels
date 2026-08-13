@@ -1,0 +1,16 @@
+Bootstrap: docker
+From: python:3.11-slim-bookworm
+
+%files
+    vhmodels /opt/vhmodels-src/vhmodels
+
+%post
+    python -m venv --without-pip /opt/venv
+
+%environment
+    export VIRTUAL_ENV=/opt/venv
+    export PATH=/opt/venv/bin:$PATH
+    export PYTHONPATH=/opt/vhmodels-src
+
+%startscript
+    exec /opt/venv/bin/python -m vhmodels.vh_checker.worker serve "$@"

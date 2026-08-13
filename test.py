@@ -16,7 +16,11 @@
 
 import vhmodels
 
-model = vhmodels.load_model(project="prottrans", model="prot_t5_xl_uniref50")
+with vhmodels.load_model(
+    project="dinobloom", model="s", runtime="apptainer"
+) as model:
+    first = model.embed(input="example_data/DinoBloom/001.bmp")
+    second = model.embed(input="example_data/DinoBloom/001.bmp")
 
-results = model.embed(input='example_data/MolE/sequences.smiles')
-print(results)
+print(f"First result: {first} \n\n")
+print(f"Second result: {second}")

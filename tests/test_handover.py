@@ -6,6 +6,7 @@ import subprocess
 
 import pytest
 
+from vhmodels.utils import lima_utils
 from vhmodels.vh_checker import backends, factory
 from vhmodels.vh_checker import embed as embed_runner
 from vhmodels.vh_checker.factory import _extract_result, _run_subprocess, load_model
@@ -38,6 +39,11 @@ def test_extract_ignores_surrounding_noise():
         + "trailing log line\n"
     )
     assert _extract_result(stdout, "") == {"k": "v"}
+
+
+def test_extract_allows_marker_text_inside_model_data():
+    value = f"before {RESULT_MARKER} after"
+    assert _extract_result(_frame({"output": value}), "") == value
 
 
 def test_extract_no_markers_fails():
@@ -155,6 +161,35 @@ def test_terminate_group_escalates_sigterm_then_sigkill(monkeypatch):
     assert sent == [signal.SIGTERM, signal.SIGKILL]
 
 
+def test_run_subprocess_interrupt_kills_process_group(monkeypatch):
+    sent = []
+
+    class FakeProc:
+        pid = 4242
+        returncode = -15
+        calls = 0
+
+        def communicate(self, input=None, timeout=None):
+            self.calls += 1
+            if self.calls == 1:
+                raise KeyboardInterrupt
+            return ("", "")
+
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: FakeProc())
+    monkeypatch.setattr(factory.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(
+        factory.os, "killpg", lambda pgid, sig: sent.append((pgid, sig))
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        _run_subprocess(["worker"], payload="", subprocess_env=None, timeout=10)
+
+    assert sent == [(4242, signal.SIGTERM)]
+
+
 # --- NDJSON request path ---------------------------------------------------
 
 
@@ -187,17 +222,51 @@ def test_modelproxy_embed_sends_ndjson_messages(monkeypatch):
     assert result == {"prediction": 42}
 
 
-def test_modelproxy_apptainer_uses_sif_and_same_protocol(monkeypatch, tmp_path):
-    captured = {}
+def test_conda_remains_one_shot_and_forwards_embed_kwargs(monkeypatch):
+    payloads = []
 
     def fake_run_subprocess(cmd, payload, subprocess_env, timeout):
-        captured["cmd"] = cmd
-        captured["payload"] = payload
-        captured["subprocess_env"] = subprocess_env
-        return (_frame({"output": [1, 2, 3]}), "")
+        payloads.append(payload)
+        return (_frame({"output": len(payloads)}), "")
+
+    monkeypatch.setattr(factory, "_run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(
+        "vhmodels.vh_checker.backends.CondaBackend.is_available", lambda self: True
+    )
+
+    model = load_model("dinobloom", model="s", device="cpu")
+    assert model.embed("first", batch_size=2) == 1
+    assert model.embed("second", batch_size=4) == 2
+
+    messages = [
+        [json.loads(line) for line in payload.splitlines()] for payload in payloads
+    ]
+    assert len(messages) == 2
+    assert [request[0][MESSAGE_TYPE_KEY] for request in messages] == [
+        LOAD_MESSAGE_TYPE,
+        LOAD_MESSAGE_TYPE,
+    ]
+    assert [request[1]["kwargs"] for request in messages] == [
+        {"batch_size": 2},
+        {"batch_size": 4},
+    ]
+
+
+def test_modelproxy_apptainer_starts_loads_and_reuses_instance(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run_subprocess(cmd, payload, subprocess_env, timeout):
+        calls.append((cmd, payload, subprocess_env, timeout))
+        if "request" not in cmd:
+            return ("", "")
+        message = json.loads(payload)
+        result = None
+        if message[MESSAGE_TYPE_KEY] == EMBED_MESSAGE_TYPE:
+            result = {"output": [message["input"]]}
+        return (_frame({"ok": True, "result": result}), "")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(backends, "uses_lima", lambda: False)
+    monkeypatch.setattr(lima_utils, "uses_lima", lambda: False)
     monkeypatch.setattr(factory, "_run_subprocess", fake_run_subprocess)
     monkeypatch.setattr(
         "vhmodels.vh_checker.backends.ApptainerBackend.is_available",
@@ -209,29 +278,43 @@ def test_modelproxy_apptainer_uses_sif_and_same_protocol(monkeypatch, tmp_path):
     )
 
     model = load_model("dinobloom", model="s", runtime="apptainer", device="cpu")
-    result = model.embed("image.bmp")
+    assert model.embed("first.bmp") == ["first.bmp"]
+    assert model.embed("second.bmp", batch_size=4) == ["second.bmp"]
 
-    assert captured["cmd"] == [
+    assert calls[0][0][:4] == [
         "apptainer",
-        "exec",
+        "instance",
+        "start",
         str(tmp_path / "vhmodels-dinobloom.sif"),
-        "/opt/venv/bin/python",
-        "-m",
-        "vhmodels.vh_checker.embed",
-        "--project",
-        "dinobloom",
-        "--model",
-        "s",
     ]
-    assert [json.loads(line) for line in captured["payload"].splitlines()] == [
+    request_messages = [
+        json.loads(payload) for cmd, payload, _, _ in calls if "request" in cmd
+    ]
+    assert request_messages == [
         {
             MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
+            "project": "dinobloom",
+            "model": "s",
             "load_kwargs": {"device": "cpu"},
         },
-        {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": "image.bmp"},
+        {
+            MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE,
+            "input": "first.bmp",
+            "kwargs": {},
+            "cwd": str(tmp_path),
+        },
+        {
+            MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE,
+            "input": "second.bmp",
+            "kwargs": {"batch_size": 4},
+            "cwd": str(tmp_path),
+        },
     ]
-    assert "PYTHONPATH" not in captured["subprocess_env"]
-    assert result == [1, 2, 3]
+    assert sum(cmd[:3] == ["apptainer", "instance", "start"] for cmd, *_ in calls) == 1
+    assert all("PYTHONPATH" not in env for _, _, env, _ in calls)
+
+    model.close()
+    assert calls[-1][0][:3] == ["apptainer", "instance", "stop"]
 
 
 def test_apptainer_image_path_can_be_overridden(tmp_path):
@@ -253,7 +336,7 @@ def test_missing_apptainer_executable_has_runtime_specific_guidance(
 ):
     image_path = tmp_path / "mole.sif"
     image_path.touch()
-    monkeypatch.setattr(backends, "uses_lima", lambda: False)
+    monkeypatch.setattr(lima_utils, "uses_lima", lambda: False)
     model = load_model("mole", runtime="apptainer", image_path=image_path)
     monkeypatch.setattr(model.backend, "is_runtime_available", lambda: False)
     with pytest.raises(RuntimeError, match="executable is not available"):
@@ -261,17 +344,25 @@ def test_missing_apptainer_executable_has_runtime_specific_guidance(
 
 
 def test_modelproxy_apptainer_prepares_and_uses_lima(monkeypatch, tmp_path):
-    captured = {}
+    captured = {"calls": []}
     image_path = tmp_path / "dinobloom.sif"
     image_path.touch()
 
     def fake_run_subprocess(cmd, payload, subprocess_env, timeout):
-        captured["cmd"] = cmd
-        captured["payload"] = payload
-        return (_frame({"output": [42]}), "")
+        captured["calls"].append((cmd, payload))
+        if "request" in cmd:
+            message = json.loads(payload)
+            result = (
+                {"output": [42]}
+                if message[MESSAGE_TYPE_KEY] == EMBED_MESSAGE_TYPE
+                else None
+            )
+            return (_frame({"ok": True, "result": result}), "")
+        return ("", "")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(backends, "uses_lima", lambda: True)
+    monkeypatch.setattr(lima_utils, "uses_lima", lambda: True)
+    monkeypatch.setattr(lima_utils, "is_lima_shared_path", lambda path: True)
     monkeypatch.setattr(factory, "_run_subprocess", fake_run_subprocess)
     monkeypatch.setattr(
         backends.ApptainerBackend,
@@ -290,28 +381,44 @@ def test_modelproxy_apptainer_prepares_and_uses_lima(monkeypatch, tmp_path):
     result = model.embed("image.bmp")
 
     assert captured["prepared"] is True
-    assert captured["cmd"][:7] == [
-        "limactl",
-        "shell",
-        "--tty=false",
-        "--preserve-env",
-        "--workdir",
-        str(tmp_path.resolve()),
-        backends.LIMA_INSTANCE,
-    ]
-    assert captured["cmd"][7:10] == [
+    assert all(
+        command[:7]
+        == [
+            "limactl",
+            "shell",
+            "--tty=false",
+            "--preserve-env",
+            "--workdir",
+            str(backends.Path.home().resolve()),
+            lima_utils.LIMA_INSTANCE,
+        ]
+        for command, _ in captured["calls"]
+    )
+    assert captured["calls"][0][0][7:10] == [
         "apptainer",
-        "exec",
-        str(image_path.resolve()),
+        "instance",
+        "start",
     ]
-    assert [json.loads(line) for line in captured["payload"].splitlines()] == [
+    assert [
+        json.loads(payload)
+        for command, payload in captured["calls"]
+        if "request" in command
+    ] == [
         {
             MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
+            "project": "dinobloom",
+            "model": None,
             "load_kwargs": {"device": "cpu"},
         },
-        {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": "image.bmp"},
+        {
+            MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE,
+            "input": "image.bmp",
+            "kwargs": {},
+            "cwd": str(tmp_path.resolve()),
+        },
     ]
     assert result == [42]
+    model.close()
 
 
 def test_image_path_is_rejected_for_conda(tmp_path):
@@ -331,8 +438,8 @@ def test_child_dispatch_forwards_load_kwargs_and_embed_input():
         def load_model(self, model, **kwargs):
             calls.append(("load_model", model, kwargs))
 
-        def embed(self, input):
-            calls.append(("embed", input))
+        def embed(self, input, **kwargs):
+            calls.append(("embed", input, kwargs))
             return {"output": {"prediction": 7}}
 
     result = embed_runner._dispatch_embed(
@@ -340,13 +447,17 @@ def test_child_dispatch_forwards_load_kwargs_and_embed_input():
         "s",
         [
             {MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE, "load_kwargs": {"foo": "bar"}},
-            {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": {"text": "hello"}},
+            {
+                MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE,
+                "input": {"text": "hello"},
+                "kwargs": {"batch_size": 8},
+            },
         ],
     )
 
     assert calls == [
         ("load_model", "s", {"foo": "bar"}),
-        ("embed", {"text": "hello"}),
+        ("embed", {"text": "hello"}, {"batch_size": 8}),
     ]
     assert result == {"output": {"prediction": 7}}
 

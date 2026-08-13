@@ -47,7 +47,10 @@ def _dispatch_embed(instance, model_name, messages):
     operation_message = messages[1]
     operation_type = operation_message.get(MESSAGE_TYPE_KEY)
     if operation_type == EMBED_MESSAGE_TYPE:
-        return instance.embed(operation_message.get("input"))
+        embed_kwargs = operation_message.get("kwargs") or {}
+        if not isinstance(embed_kwargs, dict):
+            raise ValueError("kwargs must be a JSON object.")
+        return instance.embed(operation_message.get("input"), **embed_kwargs)
     raise ValueError(f"Unknown message type '{operation_type}'.")
 
 

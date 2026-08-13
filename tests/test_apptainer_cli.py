@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from vhmodels.utils import lima_utils
 from vhmodels.vh_checker import cli, factory
 
 
@@ -122,6 +123,8 @@ def test_create_apptainer_image_renders_and_builds_definition(
     assert "export VIRTUAL_ENV=/opt/venv" in captured["definition"]
     assert "export PATH=/opt/venv/bin:$PATH" in captured["definition"]
     assert "export PYTHONPATH=/opt/vhmodels-src" in captured["definition"]
+    assert "%startscript" in captured["definition"]
+    assert "python -m vhmodels.vh_checker.worker serve" in captured["definition"]
     assert "export TMPDIR=/var/tmp" in captured["definition"]
     assert (
         'mkdir -p "$APPTAINER_ROOTFS/opt/vhmodels-build-cache"'
@@ -259,9 +262,9 @@ def test_create_apptainer_image_uses_lima_and_amd64_on_macos(
     captured = {}
     output_path = tmp_path / "hyformer.sif"
     monkeypatch.setattr(cli, "_determine_current_platform", lambda: "macos-arm64")
-    monkeypatch.setattr(cli, "is_lima_shared_path", lambda path: True)
+    monkeypatch.setattr(lima_utils, "is_lima_shared_path", lambda path: True)
     monkeypatch.setattr(
-        cli,
+        lima_utils,
         "ensure_lima_instance",
         lambda: captured.setdefault("prepared", True),
     )
@@ -312,14 +315,14 @@ def test_create_apptainer_image_uses_lima_and_amd64_on_macos(
 def test_create_apptainer_image_reports_missing_lima(monkeypatch, tmp_path):
     output_path = tmp_path / "dinobloom.sif"
     monkeypatch.setattr(cli, "_determine_current_platform", lambda: "macos-arm64")
-    monkeypatch.setattr(cli, "is_lima_shared_path", lambda path: True)
+    monkeypatch.setattr(lima_utils, "is_lima_shared_path", lambda path: True)
 
     def missing_lima():
         raise RuntimeError(
             "Lima is not installed; install it with 'brew install lima'."
         )
 
-    monkeypatch.setattr(cli, "ensure_lima_instance", missing_lima)
+    monkeypatch.setattr(lima_utils, "ensure_lima_instance", missing_lima)
 
     result = CliRunner().invoke(
         cli.main,
@@ -334,9 +337,11 @@ def test_create_apptainer_image_rejects_unshared_macos_cache(monkeypatch, tmp_pa
     output_path = tmp_path / "dinobloom.sif"
     shared_paths = iter([True, False])
     monkeypatch.setattr(cli, "_determine_current_platform", lambda: "macos-arm64")
-    monkeypatch.setattr(cli, "is_lima_shared_path", lambda path: next(shared_paths))
     monkeypatch.setattr(
-        cli,
+        lima_utils, "is_lima_shared_path", lambda path: next(shared_paths)
+    )
+    monkeypatch.setattr(
+        lima_utils,
         "ensure_lima_instance",
         lambda: pytest.fail("Lima should not start for an inaccessible cache"),
     )
@@ -355,6 +360,12 @@ def test_run_cli_forwards_apptainer_runtime_and_image(monkeypatch, tmp_path):
     image_path = tmp_path / "custom.sif"
 
     class FakeModel:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            captured["closed"] = True
+
         def embed(self, data):
             captured["data"] = data
             return [1, 2, 3]
@@ -386,5 +397,6 @@ def test_run_cli_forwards_apptainer_runtime_and_image(monkeypatch, tmp_path):
         "runtime": "apptainer",
         "image_path": image_path,
         "data": {"path": "image.bmp"},
+        "closed": True,
     }
     assert "[\n  1,\n  2,\n  3\n]" in result.output

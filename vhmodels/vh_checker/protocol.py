@@ -2,9 +2,13 @@
 # Both the parent (ModelProxy in factory.py) and the child
 # (vhmodels.vh_checker.embed) import these values so the contract cannot drift.
 #
-# Parent -> child request schema (newline-delimited JSON, one message per line):
+# One-shot parent -> child request schema (newline-delimited JSON):
 # {"type": "load", "load_kwargs": {...}}
-# {"type": "embed", "input": <any JSON value>}
+# {"type": "embed", "input": <any JSON value>, "kwargs": {...}}
+#
+# Persistent-worker requests use the same message types. The initial load also
+# carries project/model, while each subsequent embed may carry cwd. The worker
+# replies with {"ok": true, "result": ...} or {"ok": false, "error": ...}.
 #
 # Child -> parent response schema:
 # RESULT_MARKER + json.dumps(<model result dict>) + RESULT_MARKER + "\n"

@@ -16,6 +16,7 @@ from vhmodels.utils import lima_utils
 # The runner module executed inside the isolated environment.
 _RUNNER = ["python", "-m", "vhmodels.vh_checker.embed"]
 _APPTAINER_RUNNER = ["/opt/venv/bin/python", "-m", "vhmodels.vh_checker.embed"]
+_APPTAINER_WORKER = ["/opt/venv/bin/python", "-m", "vhmodels.vh_checker.worker"]
 
 
 class RuntimeBackend(ABC):
@@ -77,6 +78,9 @@ class ApptainerBackend(RuntimeBackend):
     def __init__(self, image_path, use_lima=None):
         self.image_path = os.fspath(image_path)
         self.use_lima = lima_utils.uses_lima() if use_lima is None else use_lima
+        # Lifecycle/relay commands do not need the caller's changing cwd. Use a
+        # stable, Lima-shared location so cleanup still works after ``chdir``.
+        self._command_workdir = Path.home().resolve() if self.use_lima else None
 
     def build_command(self, script_args):
         command = [
@@ -86,9 +90,51 @@ class ApptainerBackend(RuntimeBackend):
             *_APPTAINER_RUNNER,
             *list(script_args),
         ]
+        return self._wrap_command(command)
+
+    def _wrap_command(self, command):
         if self.use_lima:
-            return lima_utils.lima_shell_command(command, Path.cwd())
+            return lima_utils.lima_shell_command(command, self._command_workdir)
         return command
+
+    def build_instance_start_command(self, instance_name, socket_path):
+        """Build the command that starts the image's persistent worker."""
+        return self._wrap_command(
+            [
+                "apptainer",
+                "instance",
+                "start",
+                self.image_path,
+                instance_name,
+                socket_path,
+            ]
+        )
+
+    def build_instance_request_command(
+        self, instance_name, socket_path, connect_timeout
+    ):
+        """Build a lightweight relay command inside a running instance."""
+        return self._wrap_command(
+            [
+                "apptainer",
+                "exec",
+                f"instance://{instance_name}",
+                *_APPTAINER_WORKER,
+                "request",
+                "--socket",
+                socket_path,
+                "--connect-timeout",
+                f"{connect_timeout:g}",
+            ]
+        )
+
+    def build_instance_stop_command(self, instance_name):
+        """Build the exact-name command that stops a managed instance."""
+        return self._wrap_command(["apptainer", "instance", "stop", instance_name])
+
+    def build_instance_list_command(self, instance_name):
+        """Build a command that lists one exact managed instance name."""
+        return self._wrap_command(["apptainer", "instance", "list", instance_name])
 
     def is_available(self):
         return Path(self.image_path).is_file()
@@ -105,12 +151,15 @@ class ApptainerBackend(RuntimeBackend):
                 "On macOS, the Apptainer image must be under your home "
                 "directory so Lima can access it."
             )
-        if not lima_utils.is_lima_shared_path(Path.cwd()):
+        lima_utils.ensure_lima_instance()
+
+    def validate_request_cwd(self, cwd):
+        """Ensure a request cwd is visible inside the persistent instance."""
+        if self.use_lima and not lima_utils.is_lima_shared_path(cwd):
             raise RuntimeError(
                 "On macOS, run vhmodels from a directory under your home "
                 "directory so Lima can access relative input paths."
             )
-        lima_utils.ensure_lima_instance()
 
     def subprocess_env(self):
         # The image contains its own vhmodels source and Python environment.

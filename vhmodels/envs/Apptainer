@@ -42,3 +42,6 @@ Stage: runtime
     export VIRTUAL_ENV=/opt/venv
     export PATH=/opt/venv/bin:$PATH
     export PYTHONPATH=/opt/vhmodels-src
+
+%startscript
+    exec /opt/venv/bin/python -m vhmodels.vh_checker.worker serve "$@"

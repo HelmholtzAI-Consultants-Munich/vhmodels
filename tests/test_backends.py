@@ -1,6 +1,7 @@
 # Unit tests for the runtime backend abstraction (vhmodels.vh_checker.backends).
 import pytest
 
+from vhmodels.utils import lima_utils
 from vhmodels.vh_checker import backends
 from vhmodels.vh_checker.backends import ApptainerBackend, CondaBackend, get_backend
 
@@ -155,8 +156,8 @@ def test_apptainer_build_command_uses_lima_on_macos(monkeypatch, tmp_path):
         "--tty=false",
         "--preserve-env",
         "--workdir",
-        str(workdir.resolve()),
-        backends.LIMA_INSTANCE,
+        str(backends.Path.home().resolve()),
+        lima_utils.LIMA_INSTANCE,
     ]
     assert command[7:] == [
         "apptainer",
@@ -196,43 +197,42 @@ def test_apptainer_lima_env_binds_host_home(monkeypatch, tmp_path):
 
 
 def test_apptainer_lima_prepare_requires_shared_workdir(monkeypatch):
-    shared = iter([True, False])
-    monkeypatch.setattr(backends, "is_lima_shared_path", lambda path: next(shared))
+    monkeypatch.setattr(lima_utils, "is_lima_shared_path", lambda path: True)
     monkeypatch.setattr(
-        backends,
+        lima_utils,
         "ensure_lima_instance",
-        lambda: pytest.fail(
-            "VM should not start for an inaccessible working directory"
-        ),
+        lambda: None,
     )
 
     backend = ApptainerBackend("model.sif", use_lima=True)
+    backend.prepare()
+    monkeypatch.setattr(lima_utils, "is_lima_shared_path", lambda path: False)
 
     with pytest.raises(RuntimeError, match="relative input paths"):
-        backend.prepare()
+        backend.validate_request_cwd("/unshared/workdir")
 
 
 def test_ensure_lima_creates_fast_rosetta_vm(monkeypatch):
     commands = []
-    monkeypatch.setattr(backends.shutil, "which", lambda executable: "/bin/limactl")
-    monkeypatch.setattr(backends.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(lima_utils.shutil, "which", lambda executable: "/bin/limactl")
+    monkeypatch.setattr(lima_utils.platform, "machine", lambda: "arm64")
 
     def fake_run(command, **kwargs):
         commands.append((command, kwargs))
         if command[:2] == ["limactl", "list"]:
-            return backends.subprocess.CompletedProcess(command, 0, stdout="")
-        return backends.subprocess.CompletedProcess(command, 0)
+            return lima_utils.subprocess.CompletedProcess(command, 0, stdout="")
+        return lima_utils.subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(backends.subprocess, "run", fake_run)
+    monkeypatch.setattr(lima_utils.subprocess, "run", fake_run)
 
-    backends.ensure_lima_instance()
+    lima_utils.ensure_lima_instance()
 
     assert commands[0][0] == ["limactl", "list", "--format=json"]
     assert commands[1][0] == [
         "limactl",
         "start",
         "--tty=false",
-        f"--name={backends.LIMA_INSTANCE}",
+        f"--name={lima_utils.LIMA_INSTANCE}",
         "--vm-type=vz",
         "--arch=aarch64",
         "--rosetta",
@@ -244,20 +244,20 @@ def test_ensure_lima_creates_fast_rosetta_vm(monkeypatch):
 
 def test_ensure_lima_detects_python_running_under_rosetta(monkeypatch):
     commands = []
-    monkeypatch.setattr(backends.shutil, "which", lambda executable: "/bin/limactl")
-    monkeypatch.setattr(backends.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(lima_utils.shutil, "which", lambda executable: "/bin/limactl")
+    monkeypatch.setattr(lima_utils.platform, "machine", lambda: "x86_64")
 
     def fake_run(command, **kwargs):
         commands.append(command)
         if command[:2] == ["limactl", "list"]:
-            return backends.subprocess.CompletedProcess(command, 0, stdout="")
+            return lima_utils.subprocess.CompletedProcess(command, 0, stdout="")
         if command[0] == "sysctl":
-            return backends.subprocess.CompletedProcess(command, 0, stdout="1\n")
-        return backends.subprocess.CompletedProcess(command, 0)
+            return lima_utils.subprocess.CompletedProcess(command, 0, stdout="1\n")
+        return lima_utils.subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(backends.subprocess, "run", fake_run)
+    monkeypatch.setattr(lima_utils.subprocess, "run", fake_run)
 
-    backends.ensure_lima_instance()
+    lima_utils.ensure_lima_instance()
 
     start_command = next(command for command in commands if command[1] == "start")
     assert "--arch=aarch64" in start_command
@@ -270,18 +270,18 @@ def test_ensure_lima_detects_python_running_under_rosetta(monkeypatch):
 )
 def test_ensure_lima_reuses_existing_vm(monkeypatch, status, expected_starts):
     commands = []
-    monkeypatch.setattr(backends.shutil, "which", lambda executable: "/bin/limactl")
+    monkeypatch.setattr(lima_utils.shutil, "which", lambda executable: "/bin/limactl")
 
     def fake_run(command, **kwargs):
         commands.append(command)
         if command[:2] == ["limactl", "list"]:
             output = '{"name":"vhmodels-apptainer","status":"' + status + '"}\n'
-            return backends.subprocess.CompletedProcess(command, 0, stdout=output)
-        return backends.subprocess.CompletedProcess(command, 0)
+            return lima_utils.subprocess.CompletedProcess(command, 0, stdout=output)
+        return lima_utils.subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(backends.subprocess, "run", fake_run)
+    monkeypatch.setattr(lima_utils.subprocess, "run", fake_run)
 
-    backends.ensure_lima_instance()
+    lima_utils.ensure_lima_instance()
 
     start_commands = [command for command in commands if command[1] == "start"]
     assert len(start_commands) == expected_starts
@@ -290,5 +290,85 @@ def test_ensure_lima_reuses_existing_vm(monkeypatch, status, expected_starts):
             "limactl",
             "start",
             "--tty=false",
-            backends.LIMA_INSTANCE,
+            lima_utils.LIMA_INSTANCE,
         ]
+
+
+def test_apptainer_instance_commands_use_persistent_worker():
+    backend = ApptainerBackend("/images/model.sif", use_lima=False)
+
+    assert backend.build_instance_start_command("worker-1", "/tmp/worker.sock") == [
+        "apptainer",
+        "instance",
+        "start",
+        "/images/model.sif",
+        "worker-1",
+        "/tmp/worker.sock",
+    ]
+    assert backend.build_instance_request_command(
+        "worker-1", "/tmp/worker.sock", 12
+    ) == [
+        "apptainer",
+        "exec",
+        "instance://worker-1",
+        "/opt/venv/bin/python",
+        "-m",
+        "vhmodels.vh_checker.worker",
+        "request",
+        "--socket",
+        "/tmp/worker.sock",
+        "--connect-timeout",
+        "12",
+    ]
+    assert backend.build_instance_stop_command("worker-1") == [
+        "apptainer",
+        "instance",
+        "stop",
+        "worker-1",
+    ]
+    assert backend.build_instance_list_command("worker-1") == [
+        "apptainer",
+        "instance",
+        "list",
+        "worker-1",
+    ]
+
+
+def test_apptainer_instance_commands_are_lima_wrapped(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    backend = ApptainerBackend("/images/model.sif", use_lima=True)
+
+    commands = [
+        backend.build_instance_start_command("worker-1", "/tmp/worker.sock"),
+        backend.build_instance_request_command("worker-1", "/tmp/worker.sock", 30),
+        backend.build_instance_stop_command("worker-1"),
+        backend.build_instance_list_command("worker-1"),
+    ]
+
+    for command in commands:
+        assert command[:7] == [
+            "limactl",
+            "shell",
+            "--tty=false",
+            "--preserve-env",
+            "--workdir",
+            str(backends.Path.home().resolve()),
+            lima_utils.LIMA_INSTANCE,
+        ]
+
+
+def test_lima_lifecycle_commands_keep_stable_workdir_after_chdir(tmp_path, monkeypatch):
+    image_dir = tmp_path / "images"
+    image_dir.mkdir()
+    backend = ApptainerBackend(image_dir / "model.sif", use_lima=True)
+    another_dir = tmp_path / "another"
+    another_dir.mkdir()
+    monkeypatch.chdir(another_dir)
+
+    stop_command = backend.build_instance_stop_command("worker-1")
+
+    assert stop_command[4:7] == [
+        "--workdir",
+        str(backends.Path.home().resolve()),
+        lima_utils.LIMA_INSTANCE,
+    ]

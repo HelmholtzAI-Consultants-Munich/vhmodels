@@ -8,6 +8,7 @@ from pathlib import Path
 
 from vhmodels.registry import MODEL_REGISTRY
 from vhmodels.vh_checker.backends import get_backend
+from vhmodels.vh_checker.process_manager import ApptainerProcessManager
 from vhmodels.vh_checker.protocol import (
     EMBED_MESSAGE_TYPE,
     LOAD_MESSAGE_TYPE,
@@ -68,6 +69,10 @@ def _run_subprocess(cmd, payload, subprocess_env, timeout):
             f"Model subprocess exceeded {timeout}s and was killed.\n"
             f"--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
         )
+    except BaseException:
+        _terminate_group(proc)
+        proc.communicate()
+        raise
     if proc.returncode != 0:
         raise RuntimeError(
             f"Model subprocess failed (exit {proc.returncode}).\n"
@@ -76,13 +81,8 @@ def _run_subprocess(cmd, payload, subprocess_env, timeout):
     return stdout, stderr
 
 
-def _extract_result(stdout, stderr):
-    """Extract the framed JSON result from the child's stdout.
-
-    Requires both the opening and closing RESULT_MARKER; a missing closing
-    marker means the output was truncated (e.g. the child was killed mid-write).
-    Returns the value under the model's "output" key (the established contract).
-    """
+def _extract_frame(stdout, stderr):
+    """Extract and decode one RESULT_MARKER-framed JSON value."""
 
     def _fail(reason):
         raise ValueError(
@@ -96,8 +96,9 @@ def _extract_result(stdout, stderr):
         _fail("No result marker found in subprocess output (no opening marker).")
 
     start = open_idx + len(RESULT_MARKER)
-    close_idx = stdout.find(RESULT_MARKER, start)
-    if close_idx == -1:
+    # Use the final marker so model data may itself contain the marker string.
+    close_idx = stdout.rfind(RESULT_MARKER)
+    if close_idx < start:
         _fail("Result truncated: opening marker present but closing marker missing.")
 
     chunk = stdout[start:close_idx]
@@ -106,9 +107,23 @@ def _extract_result(stdout, stderr):
     except json.JSONDecodeError as e:
         _fail(f"Result frame is not valid JSON ({e}).")
 
-    if "output" not in parsed:
-        _fail(f"Model result missing 'output' key: {parsed!r}")
+    return parsed
+
+
+def _unwrap_model_result(parsed, stdout="", stderr=""):
+    """Return the value under the model's established ``output`` envelope."""
+    if not isinstance(parsed, dict) or "output" not in parsed:
+        raise ValueError(
+            f"Model result missing 'output' key: {parsed!r}\n"
+            f"--- subprocess stdout ---\n{stdout}\n"
+            f"--- subprocess stderr ---\n{stderr}"
+        )
     return parsed["output"]
+
+
+def _extract_result(stdout, stderr):
+    """Extract a framed model result and return its ``output`` value."""
+    return _unwrap_model_result(_extract_frame(stdout, stderr), stdout, stderr)
 
 
 class ModelProxy:
@@ -129,6 +144,20 @@ class ModelProxy:
         self.load_kwargs = load_kwargs or {}
         # Selecting the backend here fails fast on an unsupported runtime.
         self.backend = get_backend(runtime, env_name)
+        self._process_manager = None
+        if runtime == "apptainer":
+            # Lambdas resolve these module globals at call time, retaining the
+            # existing unit-test seam while keeping the manager independent of
+            # this module's subprocess implementation.
+            self._process_manager = ApptainerProcessManager(
+                backend=self.backend,
+                project=project,
+                model=model,
+                load_kwargs=self.load_kwargs,
+                timeout=timeout,
+                run_subprocess=lambda *args, **kwargs: _run_subprocess(*args, **kwargs),
+                extract_frame=lambda *args, **kwargs: _extract_frame(*args, **kwargs),
+            )
 
     def embed(self, input, **kwargs):
         if not self.backend.is_available():
@@ -152,7 +181,22 @@ class ModelProxy:
                 "The Apptainer executable is not available. Install Apptainer "
                 "and ensure 'apptainer' is in PATH."
             )
+        if self.runtime == "apptainer":
+            raw_result = self._process_manager.embed(
+                input=input,
+                kwargs=kwargs,
+                cwd=Path.cwd(),
+            )
+            return _unwrap_model_result(raw_result)
+
         self.backend.prepare()
+
+        operation_message = {
+            MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE,
+            "input": input,
+        }
+        if kwargs:
+            operation_message["kwargs"] = kwargs
 
         # The child reads one tagged JSON message per line from stdin.
         payload = "\n".join(
@@ -163,7 +207,7 @@ class ModelProxy:
                         "load_kwargs": self.load_kwargs,
                     }
                 ),
-                json.dumps({MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": input}),
+                json.dumps(operation_message),
             ]
         )
 
@@ -176,6 +220,17 @@ class ModelProxy:
             cmd, payload, self.backend.subprocess_env(), self.timeout
         )
         return _extract_result(stdout, stderr)
+
+    def close(self):
+        """Release a persistent Apptainer worker, if this proxy owns one."""
+        if self._process_manager is not None:
+            self._process_manager.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
 
 def load_model(project, model=None, runtime="conda", image_path=None, **load_kwargs):

@@ -381,8 +381,8 @@ def run(model_id, data_json, runtime, image_path):
 
     try:
         data = json.loads(data_json)
-        model = load_model(model_id, runtime=runtime, image_path=image_path)
-        result = model.embed(data)
+        with load_model(model_id, runtime=runtime, image_path=image_path) as model:
+            result = model.embed(data)
         click.echo(json.dumps(result, indent=2))
     except Exception as e:
         click.echo(f"Error: {str(e)}")
