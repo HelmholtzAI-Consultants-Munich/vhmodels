@@ -63,8 +63,11 @@ class DinoBloom(BaseModel):
 
         dinov2_model, embed_dim = self.model_config[model]
 
-        # Load base DINOv2 model
-        self.model = torch.hub.load("facebookresearch/dinov2", dinov2_model)
+        # Build the DINOv2 architecture without downloading its pretrained
+        # weights; the complete DinoBloom checkpoint below replaces them.
+        self.model = torch.hub.load(
+            "facebookresearch/dinov2", dinov2_model, pretrained=False
+        )
 
         # Download DinoBloom weights
         ckpt_path = hf_hub_download(

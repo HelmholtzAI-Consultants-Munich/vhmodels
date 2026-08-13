@@ -1,5 +1,4 @@
 from vhmodels.vh_checker.base import BaseModel
-from vhmodels.utils.paths import get_model_cache_dir
 
 from hyformer.models.auto import AutoModel
 from hyformer.utils import set_seed
@@ -23,15 +22,9 @@ class Hyformer(BaseModel):
         self.model = None
         self.tokenizer = None
         self.device = None
-        self.local = None
 
     def _download(self, repo_id, filename):
-        return hf_hub_download(
-            repo_id=repo_id,
-            filename=filename,
-            local_dir=str(self.local),
-            local_dir_use_symlinks=False,
-        )
+        return hf_hub_download(repo_id=repo_id, filename=filename)
 
     def load_model(self, model=None, seed=1337, **kwargs):
         """
@@ -74,8 +67,6 @@ class Hyformer(BaseModel):
             kwargs.get("device", "cuda" if torch.cuda.is_available() else "cpu")
         )
 
-        # Use ~/.cache/vhmodels/weights/model_name
-        self.local = get_model_cache_dir(model)
         repo_id = f"virtual-human-chc/{model}"
 
         vocab_path = self._download(repo_id, "vocab.txt")

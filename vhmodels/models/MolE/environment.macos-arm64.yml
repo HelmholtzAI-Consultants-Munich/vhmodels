@@ -21,5 +21,5 @@ dependencies:
     - umap-learn==0.5.5
     - huggingface_hub
     - array_record==0.4.0
-    - git+https://github.com/HelmholtzAI-Consultants-Munich/virtual_human_MolE.git@main#subdirectory=mole_package # the public pip installable package is older; don't used it
+    - git+https://github.com/HelmholtzAI-Consultants-Munich/virtual_human_MolE.git@114e2ddb9e37905a5093c3b6591b176c21a35633#subdirectory=mole_package # the public pip installable package is older; don't used it
     - scikit-learn==1.7.2

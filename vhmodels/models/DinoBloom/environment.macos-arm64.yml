@@ -6,8 +6,6 @@ dependencies:
   - python=3.10
   - pip
   - numpy
-  - pandas
-  - matplotlib
   - pytorch=2.9.1
   - torchvision=0.24.1
   - pip:
