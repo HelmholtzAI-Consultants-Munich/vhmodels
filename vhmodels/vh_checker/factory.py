@@ -1,84 +1,18 @@
 """Host-side model proxy and subprocess handover protocol."""
 
 import json
-import os
-import signal
-import subprocess
 from pathlib import Path
 
 from vhmodels.registry import MODEL_REGISTRY
 from vhmodels.vh_checker.backends import get_backend
-from vhmodels.vh_checker.process_manager import ApptainerProcessManager
-from vhmodels.vh_checker.protocol import (
-    EMBED_MESSAGE_TYPE,
-    LOAD_MESSAGE_TYPE,
-    MESSAGE_TYPE_KEY,
-    RESULT_MARKER,
+from vhmodels.vh_checker.process_manager import (
+    ApptainerProcessManager,
+    CondaProcessManager,
 )
+from vhmodels.vh_checker.protocol import RESULT_MARKER
+from vhmodels.utils.subprocess_utils import run_subprocess as _run_subprocess
 
 DEFAULT_TIMEOUT = 600
-
-
-def _terminate_group(proc):
-    """SIGTERM then SIGKILL the child's entire process group, then reap it.
-
-    ``conda run`` (and container launchers) spawn the real python interpreter as
-    a grandchild, so killing only the immediate child would orphan it (and any
-    GPU memory it holds). Because the child is started in its own session via
-    ``start_new_session=True``, every descendant shares its process group and is
-    reached by ``os.killpg``.
-    """
-    try:
-        pgid = os.getpgid(proc.pid)
-    except ProcessLookupError:
-        return  # process already gone
-    for sig in (signal.SIGTERM, signal.SIGKILL):
-        try:
-            os.killpg(pgid, sig)
-        except ProcessLookupError:
-            return
-        try:
-            proc.wait(timeout=5)
-            return
-        except subprocess.TimeoutExpired:
-            continue  # escalate to SIGKILL
-
-
-def _run_subprocess(cmd, payload, subprocess_env, timeout):
-    """Run ``cmd``, send ``payload`` on stdin, return (stdout, stderr).
-
-    Raises RuntimeError on timeout or non-zero exit, including both streams.
-    """
-    proc = subprocess.Popen(
-        cmd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=subprocess_env,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        start_new_session=True,  # setsid(): child leads its own group+session
-    )
-    try:
-        stdout, stderr = proc.communicate(input=payload, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _terminate_group(proc)  # kill launcher + grandchild model process
-        stdout, stderr = proc.communicate()  # drain anything buffered
-        raise RuntimeError(
-            f"Model subprocess exceeded {timeout}s and was killed.\n"
-            f"--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
-        )
-    except BaseException:
-        _terminate_group(proc)
-        proc.communicate()
-        raise
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"Model subprocess failed (exit {proc.returncode}).\n"
-            f"--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
-        )
-    return stdout, stderr
 
 
 def _extract_frame(stdout, stderr):
@@ -121,11 +55,6 @@ def _unwrap_model_result(parsed, stdout="", stderr=""):
     return parsed["output"]
 
 
-def _extract_result(stdout, stderr):
-    """Extract a framed model result and return its ``output`` value."""
-    return _unwrap_model_result(_extract_frame(stdout, stderr), stdout, stderr)
-
-
 class ModelProxy:
     def __init__(
         self,
@@ -144,11 +73,7 @@ class ModelProxy:
         self.load_kwargs = load_kwargs or {}
         # Selecting the backend here fails fast on an unsupported runtime.
         self.backend = get_backend(runtime, env_name)
-        self._process_manager = None
         if runtime == "apptainer":
-            # Lambdas resolve these module globals at call time, retaining the
-            # existing unit-test seam while keeping the manager independent of
-            # this module's subprocess implementation.
             self._process_manager = ApptainerProcessManager(
                 backend=self.backend,
                 project=project,
@@ -158,73 +83,53 @@ class ModelProxy:
                 run_subprocess=lambda *args, **kwargs: _run_subprocess(*args, **kwargs),
                 extract_frame=lambda *args, **kwargs: _extract_frame(*args, **kwargs),
             )
+        else:
+            self._process_manager = CondaProcessManager(
+                backend=self.backend,
+                project=project,
+                model=model,
+                load_kwargs=self.load_kwargs,
+                timeout=timeout,
+            )
 
     def embed(self, input, **kwargs):
-        if not self.backend.is_available():
-            if self.runtime == "apptainer":
+        if not self._process_manager.is_started:
+            if self.runtime == "conda" and not self.backend.is_runtime_available():
                 raise RuntimeError(
-                    f"The Apptainer image '{self.env_name}' does not exist. "
-                    f"Please run 'vh-checker create-apptainer-image "
-                    f"{self.project}' first."
+                    "The Conda executable is not available. Install Conda and "
+                    "ensure 'conda' is in PATH."
                 )
-            raise RuntimeError(
-                f"The environment '{self.env_name}' does not exist. "
-                f"Please run 'vh-checker create-env {self.project}' first."
-            )
-        if not self.backend.is_runtime_available():
-            if getattr(self.backend, "use_lima", False):
+            if not self.backend.is_available():
+                if self.runtime == "apptainer":
+                    raise RuntimeError(
+                        f"The Apptainer image '{self.env_name}' does not exist. "
+                        f"Please run 'vh-checker create-apptainer-image "
+                        f"{self.project}' first."
+                    )
                 raise RuntimeError(
-                    "Lima is not available. On macOS, install it with "
-                    "'brew install lima' and ensure 'limactl' is in PATH."
+                    f"The environment '{self.env_name}' does not exist. "
+                    f"Please run 'vh-checker create-env {self.project}' first."
                 )
-            raise RuntimeError(
-                "The Apptainer executable is not available. Install Apptainer "
-                "and ensure 'apptainer' is in PATH."
-            )
-        if self.runtime == "apptainer":
-            raw_result = self._process_manager.embed(
-                input=input,
-                kwargs=kwargs,
-                cwd=Path.cwd(),
-            )
-            return _unwrap_model_result(raw_result)
-
-        self.backend.prepare()
-
-        operation_message = {
-            MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE,
-            "input": input,
-        }
-        if kwargs:
-            operation_message["kwargs"] = kwargs
-
-        # The child reads one tagged JSON message per line from stdin.
-        payload = "\n".join(
-            [
-                json.dumps(
-                    {
-                        MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
-                        "load_kwargs": self.load_kwargs,
-                    }
-                ),
-                json.dumps(operation_message),
-            ]
+            if self.runtime == "apptainer" and not self.backend.is_runtime_available():
+                if getattr(self.backend, "use_lima", False):
+                    raise RuntimeError(
+                        "Lima is not available. On macOS, install it with "
+                        "'brew install lima' and ensure 'limactl' is in PATH."
+                    )
+                raise RuntimeError(
+                    "The Apptainer executable is not available. Install Apptainer "
+                    "and ensure 'apptainer' is in PATH."
+                )
+        raw_result = self._process_manager.embed(
+            input=input,
+            kwargs=kwargs,
+            cwd=Path.cwd(),
         )
-
-        script_args = ["--project", self.project]
-        if self.model:
-            script_args += ["--model", self.model]
-
-        cmd = self.backend.build_command(script_args)
-        stdout, stderr = _run_subprocess(
-            cmd, payload, self.backend.subprocess_env(), self.timeout
-        )
-        return _extract_result(stdout, stderr)
+        return _unwrap_model_result(raw_result)
 
     def close(self):
-        """Release a persistent Apptainer worker, if this proxy owns one."""
-        if self._process_manager is not None:
-            self._process_manager.close()
+        """Release this proxy's persistent worker."""
+        self._process_manager.close()
 
     def __enter__(self):
         return self

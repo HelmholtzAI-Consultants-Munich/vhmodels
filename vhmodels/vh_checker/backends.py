@@ -1,4 +1,4 @@
-"""Runtime strategies for launching the isolated model runner.
+"""Runtime strategies for launching isolated model workers.
 
 ``ModelProxy`` delegates command construction, availability checks, runtime
 preparation, and subprocess environment handling to these backends.
@@ -13,18 +13,12 @@ from pathlib import Path
 
 from vhmodels.utils import lima_utils
 
-# The runner module executed inside the isolated environment.
-_RUNNER = ["python", "-m", "vhmodels.vh_checker.embed"]
-_APPTAINER_RUNNER = ["/opt/venv/bin/python", "-m", "vhmodels.vh_checker.embed"]
+_CONDA_WORKER = ["python", "-m", "vhmodels.vh_checker.worker"]
 _APPTAINER_WORKER = ["/opt/venv/bin/python", "-m", "vhmodels.vh_checker.worker"]
 
 
 class RuntimeBackend(ABC):
     """Strategy for launching the runner in an isolated environment."""
-
-    @abstractmethod
-    def build_command(self, script_args):
-        """Return the full argv to run, given the runner's script arguments."""
 
     @abstractmethod
     def is_available(self):
@@ -46,15 +40,12 @@ class CondaBackend(RuntimeBackend):
     def __init__(self, env_name):
         self.env_name = env_name
 
-    def build_command(self, script_args):
-        # --no-capture-output is REQUIRED: without it `conda run` does not
-        # forward the parent's stdin to the runner, so the child reads empty
-        # stdin and the model receives None. It also wires the child's
-        # stdout/stderr straight to our pipes instead of conda buffering them.
+    def build_worker_start_command(self, socket_path):
+        """Build the command for one persistent worker in this environment."""
         return (
             ["conda", "run", "--no-capture-output", "-n", self.env_name]
-            + _RUNNER
-            + list(script_args)
+            + _CONDA_WORKER
+            + ["serve", socket_path]
         )
 
     def is_available(self):
@@ -62,6 +53,9 @@ class CondaBackend(RuntimeBackend):
             ["conda", "env", "list"], capture_output=True, text=True
         )
         return self.env_name in result.stdout
+
+    def is_runtime_available(self):
+        return shutil.which("conda") is not None
 
     def subprocess_env(self):
         # vhmodels is installed into the env by `vh-checker create-env`, so no
@@ -81,16 +75,6 @@ class ApptainerBackend(RuntimeBackend):
         # Lifecycle/relay commands do not need the caller's changing cwd. Use a
         # stable, Lima-shared location so cleanup still works after ``chdir``.
         self._command_workdir = Path.home().resolve() if self.use_lima else None
-
-    def build_command(self, script_args):
-        command = [
-            "apptainer",
-            "exec",
-            self.image_path,
-            *_APPTAINER_RUNNER,
-            *list(script_args),
-        ]
-        return self._wrap_command(command)
 
     def _wrap_command(self, command):
         if self.use_lima:

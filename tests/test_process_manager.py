@@ -1,15 +1,17 @@
-"""Unit tests for the persistent, model-agnostic Apptainer worker path."""
+"""Tests for persistent, model-agnostic Conda and Apptainer workers."""
 
 import json
 import os
 from pathlib import Path
 import re
+import subprocess
 
 import pytest
 
 from vhmodels.vh_checker import factory, process_manager, worker
 from vhmodels.vh_checker.process_manager import (
     ApptainerProcessManager,
+    CondaProcessManager,
     ModelWorkerError,
 )
 from vhmodels.vh_checker.protocol import (
@@ -49,6 +51,34 @@ class FakeBackend:
 
     def build_instance_list_command(self, instance_name):
         return ("list", instance_name)
+
+
+class FakeCondaBackend:
+    def __init__(self):
+        self.env_name = "vhmodels-generic-model"
+        self.prepare_calls = 0
+        self.environment = {"FAKE_CONDA_ENV": "present"}
+
+    def prepare(self):
+        self.prepare_calls += 1
+
+    def subprocess_env(self):
+        return self.environment
+
+    def build_worker_start_command(self, socket_path):
+        return ("conda-worker", self.env_name, socket_path)
+
+
+class FakeCondaProcess:
+    _next_pid = 9000
+
+    def __init__(self):
+        self.pid = self._next_pid
+        type(self)._next_pid += 1
+        self.returncode = None
+
+    def poll(self):
+        return self.returncode
 
 
 class FakeTransport:
@@ -307,6 +337,166 @@ def test_model_worker_remains_loaded_after_model_error(monkeypatch):
     assert calls == {"load": 1, "embed": 2}
 
 
+def test_conda_manager_starts_once_requests_directly_and_reaps(tmp_path):
+    backend = FakeCondaBackend()
+    processes = []
+    popen_calls = []
+    terminated = []
+    messages = []
+
+    def fake_popen(command, **kwargs):
+        process = FakeCondaProcess()
+        processes.append(process)
+        popen_calls.append((command, kwargs))
+        return process
+
+    def fake_request(socket_path, message, connect_timeout, timeout, is_running):
+        assert is_running()
+        messages.append(message)
+        result = None
+        if message[MESSAGE_TYPE_KEY] == EMBED_MESSAGE_TYPE:
+            result = {
+                "output": {
+                    "input": message["input"],
+                    "kwargs": message["kwargs"],
+                }
+            }
+        return {"ok": True, "result": result}
+
+    def fake_terminate(process):
+        process.returncode = -15
+        terminated.append(process)
+
+    manager = CondaProcessManager(
+        backend=backend,
+        project="generic-model",
+        model="variant-a",
+        load_kwargs={"device": "cpu"},
+        timeout=12,
+        popen=fake_popen,
+        request_sender=fake_request,
+        terminate_process=fake_terminate,
+    )
+
+    first = manager.embed("first", kwargs={"batch_size": 2}, cwd=tmp_path)
+    second = manager.embed({"nested": [1, None]}, kwargs={"normalize": True})
+
+    assert first == {"output": {"input": "first", "kwargs": {"batch_size": 2}}}
+    assert second["output"]["input"] == {"nested": [1, None]}
+    assert backend.prepare_calls == 1
+    assert len(processes) == 1
+    command, popen_kwargs = popen_calls[0]
+    assert command == (
+        "conda-worker",
+        "vhmodels-generic-model",
+        manager.socket_path,
+    )
+    assert popen_kwargs["stdin"] is subprocess.DEVNULL
+    assert popen_kwargs["stderr"] is subprocess.STDOUT
+    assert popen_kwargs["env"] is backend.environment
+    assert popen_kwargs["start_new_session"] is True
+    assert [message[MESSAGE_TYPE_KEY] for message in messages] == [
+        LOAD_MESSAGE_TYPE,
+        EMBED_MESSAGE_TYPE,
+        EMBED_MESSAGE_TYPE,
+    ]
+    assert messages[0] == {
+        MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
+        "project": "generic-model",
+        "model": "variant-a",
+        "load_kwargs": {"device": "cpu"},
+    }
+
+    manager.close()
+    manager.close()
+    assert terminated == processes
+
+
+def test_conda_transport_failure_restarts_and_reloads():
+    backend = FakeCondaBackend()
+    processes = []
+    terminated = []
+    messages = []
+    embed_count = 0
+
+    def fake_popen(command, **kwargs):
+        process = FakeCondaProcess()
+        processes.append(process)
+        return process
+
+    def flaky_request(socket_path, message, connect_timeout, timeout, is_running):
+        nonlocal embed_count
+        messages.append(message)
+        if message[MESSAGE_TYPE_KEY] == EMBED_MESSAGE_TYPE:
+            embed_count += 1
+            if embed_count == 1:
+                raise TimeoutError("worker did not answer")
+            return {"ok": True, "result": {"output": message["input"]}}
+        return {"ok": True, "result": None}
+
+    def fake_terminate(process):
+        process.returncode = -15
+        terminated.append(process)
+
+    manager = CondaProcessManager(
+        backend=backend,
+        project="generic-model",
+        model=None,
+        load_kwargs={},
+        timeout=12,
+        popen=fake_popen,
+        request_sender=flaky_request,
+        terminate_process=fake_terminate,
+    )
+
+    with pytest.raises(RuntimeError, match="request exceeded 12s"):
+        manager.embed("first")
+    assert not manager.is_started
+
+    assert manager.embed("second") == {"output": "second"}
+    assert len(processes) == 2
+    assert terminated == [processes[0]]
+    assert [message[MESSAGE_TYPE_KEY] for message in messages].count(
+        LOAD_MESSAGE_TYPE
+    ) == 2
+
+    manager.close()
+    assert terminated == processes
+
+
+def test_conda_worker_startup_crash_reports_output_and_cleans_up():
+    backend = FakeCondaBackend()
+    process = FakeCondaProcess()
+    process.returncode = 1
+    terminated = []
+
+    def failed_popen(command, **kwargs):
+        kwargs["stdout"].write("worker import failed")
+        kwargs["stdout"].flush()
+        return process
+
+    def no_request(socket_path, message, connect_timeout, timeout, is_running):
+        assert not is_running()
+        raise RuntimeError("worker did not become ready")
+
+    manager = CondaProcessManager(
+        backend=backend,
+        project="generic-model",
+        model=None,
+        load_kwargs={},
+        timeout=12,
+        popen=failed_popen,
+        request_sender=no_request,
+        terminate_process=lambda child: terminated.append(child),
+    )
+
+    with pytest.raises(RuntimeError, match="worker import failed"):
+        manager.embed("request")
+
+    assert terminated == [process]
+    assert not manager.is_started
+
+
 def test_manager_starts_and_loads_once_for_many_requests(make_manager, tmp_path):
     manager, backend, transport = make_manager(
         project="generic-model",
@@ -439,7 +629,9 @@ def test_stale_image_error_explains_how_to_rebuild(make_manager):
     transport = MissingWorkerTransport()
     manager, backend, _ = make_manager(transport=transport)
 
-    with pytest.raises(RuntimeError, match="built before persistent model workers") as exc:
+    with pytest.raises(
+        RuntimeError, match="built before persistent model workers"
+    ) as exc:
         manager.embed("first")
 
     message = str(exc.value)

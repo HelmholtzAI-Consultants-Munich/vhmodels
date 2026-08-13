@@ -1,4 +1,4 @@
-"""Host-side lifecycle manager for persistent Apptainer model workers."""
+"""Host-side lifecycle managers for persistent model workers."""
 
 import atexit
 import json
@@ -14,6 +14,10 @@ from vhmodels.vh_checker.protocol import (
     LOAD_MESSAGE_TYPE,
     MESSAGE_TYPE_KEY,
 )
+from vhmodels.vh_checker.transports import (
+    ApptainerWorkerTransport,
+    CondaWorkerTransport,
+)
 
 
 class ModelWorkerError(RuntimeError):
@@ -23,25 +27,25 @@ class ModelWorkerError(RuntimeError):
 _MISSING_WORKER_MODULE = "No module named vhmodels.vh_checker.worker"
 
 
-def _safe_instance_component(value):
+def _safe_name_component(value):
     component = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-.")
     return component[:24] or "model"
 
 
-class ApptainerProcessManager:
-    """Own one Apptainer instance and its loaded, persistent model worker."""
+class ModelProcessManager:
+    """Load one model in a persistent worker reached through a transport."""
 
     def __init__(
         self,
-        backend,
+        transport,
         project,
         model,
         load_kwargs,
         timeout,
-        run_subprocess,
-        extract_frame,
+        runtime_name,
     ):
-        self.backend = backend
+        self.transport = transport
+        self.backend = transport.backend
         self.project = project
         self.model = model
         self.load_kwargs = dict(load_kwargs)
@@ -51,15 +55,14 @@ class ApptainerProcessManager:
             raise ValueError("timeout must be a positive, finite number.") from error
         if not math.isfinite(self.timeout) or self.timeout <= 0:
             raise ValueError("timeout must be a positive, finite number.")
-        self._run_subprocess = run_subprocess
-        self._extract_frame = extract_frame
+        self.runtime_name = runtime_name
 
         self._creator_pid = os.getpid()
-        self._project_name = _safe_instance_component(project)
+        self._project_name = _safe_name_component(project)
         self._new_identity()
 
         self._lock = threading.RLock()
-        self._instance_may_exist = False
+        self._worker_may_exist = False
         self._started = False
         self._closed = False
         self._atexit_callback = self._close_at_exit
@@ -72,8 +75,11 @@ class ApptainerProcessManager:
 
     def _new_identity(self):
         unique_suffix = f"{self._creator_pid}-{uuid.uuid4().hex[:12]}"
-        self.instance_name = f"vhmodels-{self._project_name}-{unique_suffix}"
-        self.socket_path = f"/tmp/{self.instance_name}.sock"
+        self.worker_name = f"vhmodels-{self._project_name}-{unique_suffix}"
+        # Keep the Apptainer-specific public name for compatibility with
+        # lifecycle tooling and existing callers that inspect their instance.
+        self.instance_name = self.worker_name
+        self.socket_path = f"/tmp/{self.worker_name}.sock"
 
     def _register_atexit(self):
         if not self._atexit_registered:
@@ -88,33 +94,15 @@ class ApptainerProcessManager:
     def _check_process(self):
         if os.getpid() != self._creator_pid:
             raise RuntimeError(
-                "An Apptainer model proxy cannot be used after the process forks. "
+                "A model proxy cannot be used after the process forks. "
                 "Load a new proxy in the child process."
             )
 
-    def _run(self, command, payload="", timeout=None):
-        return self._run_subprocess(
-            command,
-            payload,
-            self.backend.subprocess_env(),
-            self.timeout if timeout is None else timeout,
-        )
-
-    def _request_locked(self, message):
-        payload = json.dumps(message, ensure_ascii=False)
-        connect_timeout = min(float(self.timeout), 30.0)
-        command = self.backend.build_instance_request_command(
-            self.instance_name,
-            self.socket_path,
-            connect_timeout,
-        )
-        stdout, stderr = self._run(command, payload)
-        response = self._extract_frame(stdout, stderr)
+    @staticmethod
+    def _unwrap_response(response):
         if not isinstance(response, dict) or not isinstance(response.get("ok"), bool):
             raise ValueError(
-                "The model worker returned a malformed response.\n"
-                f"--- subprocess stdout ---\n{stdout}\n"
-                f"--- subprocess stderr ---\n{stderr}"
+                f"The model worker returned a malformed response: {response!r}"
             )
         if not response["ok"]:
             raise ModelWorkerError(
@@ -122,22 +110,31 @@ class ApptainerProcessManager:
             )
         return response.get("result")
 
+    def _request_locked(self, message):
+        response = self.transport.request(
+            self.worker_name,
+            self.socket_path,
+            message,
+            self.timeout,
+        )
+        return self._unwrap_response(response)
+
+    def _translate_start_error(self, error):
+        return None
+
     def _start_locked(self):
         if self._started:
             return
         if self._closed:
             raise RuntimeError("This model process manager is closed.")
 
-        self.backend.prepare()
-        command = self.backend.build_instance_start_command(
-            self.instance_name, self.socket_path
-        )
-        # ``instance start`` detaches. If its CLI is interrupted after forking,
-        # the UUID instance may exist even though the command never returned.
-        self._instance_may_exist = True
+        self.transport.prepare()
+        # A launcher may create its worker before reporting an error, so mark
+        # ownership before starting and make the exact identity safe to stop.
+        self._worker_may_exist = True
         self._register_atexit()
         try:
-            self._run(command, timeout=min(float(self.timeout), 60.0))
+            self.transport.start(self.worker_name, self.socket_path, self.timeout)
             self._request_locked(
                 {
                     MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
@@ -148,32 +145,17 @@ class ApptainerProcessManager:
             )
         except BaseException as error:
             self._stop_locked(suppress_errors=True)
-            if (
-                isinstance(error, RuntimeError)
-                and not isinstance(error, ModelWorkerError)
-                and _MISSING_WORKER_MODULE in str(error)
-            ):
-                image_path = getattr(self.backend, "image_path", self.project)
-                suggested_image = f"vhmodels-{self._project_name}-persistent.sif"
-                raise RuntimeError(
-                    f"The Apptainer image '{image_path}' was built before "
-                    "persistent model workers were added and does not contain "
-                    "'vhmodels.vh_checker.worker'. Rebuild it from the current "
-                    "checkout. Existing images are not overwritten, so a safe "
-                    "command is:\n"
-                    f"  vh-checker create-apptainer-image {self.project} "
-                    f"--output {suggested_image}\n"
-                    "Then pass the new path as image_path=... to load_model()."
-                ) from error
+            translated = self._translate_start_error(error)
+            if translated is not None:
+                raise translated from error
             raise
         self._started = True
 
     def embed(self, input, kwargs=None, cwd=None):
         """Send one request, starting and loading the worker if necessary."""
         self._check_process()
-        validate_request_cwd = getattr(self.backend, "validate_request_cwd", None)
-        if cwd is not None and validate_request_cwd is not None:
-            validate_request_cwd(cwd)
+        if cwd is not None:
+            self.transport.validate_request_cwd(cwd)
         message = {
             MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE,
             "input": input,
@@ -185,62 +167,43 @@ class ApptainerProcessManager:
 
         with self._lock:
             self._check_process()
-            if self._instance_may_exist and not self._started:
+            if self._worker_may_exist and not self._started:
                 raise RuntimeError(
-                    "The previous Apptainer instance could not be stopped. "
+                    f"The previous {self.runtime_name} worker could not be stopped. "
                     "Call close() again before reusing this model."
                 )
             self._start_locked()
             try:
                 return self._request_locked(message)
             except ModelWorkerError:
-                # A bad inference request does not make the loaded model or its
-                # transport unhealthy; allow a later request to reuse it.
+                # A rejected request does not invalidate an otherwise healthy
+                # loaded model, so allow a later request to reuse the worker.
                 raise
             except BaseException:
-                # A timeout, dead relay, or malformed transport response leaves
-                # worker health unknown. Stop it so the next request starts fresh.
                 self._started = False
                 self._stop_locked(suppress_errors=True)
                 raise
 
     def _stop_locked(self, suppress_errors):
-        if not self._instance_may_exist:
+        if not self._worker_may_exist:
             self._started = False
             return True
 
-        command = self.backend.build_instance_stop_command(self.instance_name)
         try:
-            # Apptainer normally waits 10 seconds before force-killing an
-            # instance; do not truncate that cleanup because inference uses a
-            # smaller timeout.
-            self._run(command, timeout=30.0)
+            self.transport.stop(self.worker_name, self.socket_path)
         except BaseException:
-            try:
-                list_command = self.backend.build_instance_list_command(
-                    self.instance_name
-                )
-                stdout, _ = self._run(list_command, timeout=30.0)
-                still_exists = any(
-                    columns and columns[0] == self.instance_name
-                    for columns in (
-                        line.split() for line in stdout.splitlines()
-                    )
-                )
-            except BaseException:
-                still_exists = True
-            if still_exists:
-                if not suppress_errors:
-                    raise
-                return False
-        self._instance_may_exist = False
+            if not suppress_errors:
+                raise
+            return False
+
+        self._worker_may_exist = False
         self._started = False
         self._new_identity()
         self._unregister_atexit()
         return True
 
     def close(self):
-        """Stop the instance once; calling close repeatedly is safe."""
+        """Stop the worker once; calling close repeatedly is safe."""
         self._check_process()
         with self._lock:
             if self._closed:
@@ -256,5 +219,88 @@ class ApptainerProcessManager:
         try:
             self.close()
         except BaseException:
-            # Interpreter shutdown cannot report cleanup failures reliably.
             pass
+
+
+class ApptainerProcessManager(ModelProcessManager):
+    """Persistent manager using an Apptainer instance transport."""
+
+    def __init__(
+        self,
+        backend,
+        project,
+        model,
+        load_kwargs,
+        timeout,
+        run_subprocess,
+        extract_frame,
+    ):
+        # Resolve through attributes so existing test/application injection can
+        # replace the subprocess helpers after construction.
+        self._run_subprocess = run_subprocess
+        self._extract_frame = extract_frame
+        transport = ApptainerWorkerTransport(
+            backend,
+            run_subprocess=lambda *args, **kwargs: self._run_subprocess(
+                *args, **kwargs
+            ),
+            extract_frame=lambda *args, **kwargs: self._extract_frame(*args, **kwargs),
+        )
+        super().__init__(
+            transport=transport,
+            project=project,
+            model=model,
+            load_kwargs=load_kwargs,
+            timeout=timeout,
+            runtime_name="Apptainer",
+        )
+
+    def _translate_start_error(self, error):
+        if (
+            isinstance(error, RuntimeError)
+            and not isinstance(error, ModelWorkerError)
+            and _MISSING_WORKER_MODULE in str(error)
+        ):
+            image_path = getattr(self.backend, "image_path", self.project)
+            suggested_image = f"vhmodels-{self._project_name}-persistent.sif"
+            return RuntimeError(
+                f"The Apptainer image '{image_path}' was built before "
+                "persistent model workers were added and does not contain "
+                "'vhmodels.vh_checker.worker'. Rebuild it from the current "
+                "checkout. Existing images are not overwritten, so a safe "
+                "command is:\n"
+                f"  vh-checker create-apptainer-image {self.project} "
+                f"--output {suggested_image}\n"
+                "Then pass the new path as image_path=... to load_model()."
+            )
+        return None
+
+
+class CondaProcessManager(ModelProcessManager):
+    """Persistent manager using one directly connected Conda process."""
+
+    def __init__(
+        self,
+        backend,
+        project,
+        model,
+        load_kwargs,
+        timeout,
+        popen=None,
+        request_sender=None,
+        terminate_process=None,
+    ):
+        transport = CondaWorkerTransport(
+            backend,
+            popen=popen,
+            request_sender=request_sender,
+            terminate_process=terminate_process,
+        )
+        super().__init__(
+            transport=transport,
+            project=project,
+            model=model,
+            load_kwargs=load_kwargs,
+            timeout=timeout,
+            runtime_name="Conda",
+        )

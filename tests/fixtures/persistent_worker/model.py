@@ -1,6 +1,7 @@
 """Small stateful model used to observe worker reuse and reloads."""
 
 import os
+import time
 import uuid
 
 
@@ -14,6 +15,8 @@ class PersistentFake:
         self.load_kwargs = kwargs
 
     def embed(self, input, **kwargs):
+        if isinstance(input, dict) and input.get("sleep"):
+            time.sleep(input["sleep"])
         self.embed_count += 1
         return {
             "output": {

@@ -29,9 +29,9 @@ def test_get_backend_unknown_runtime():
 # --- CondaBackend ----------------------------------------------------------
 
 
-def test_conda_build_command():
+def test_conda_build_worker_start_command():
     backend = CondaBackend("vhmodels-prottrans")
-    cmd = backend.build_command(["--project", "prottrans", "--model", "xl"])
+    cmd = backend.build_worker_start_command("/tmp/model-worker.sock")
     assert cmd == [
         "conda",
         "run",
@@ -40,26 +40,15 @@ def test_conda_build_command():
         "vhmodels-prottrans",
         "python",
         "-m",
-        "vhmodels.vh_checker.embed",
-        "--project",
-        "prottrans",
-        "--model",
-        "xl",
+        "vhmodels.vh_checker.worker",
+        "serve",
+        "/tmp/model-worker.sock",
     ]
 
 
-def test_conda_build_command_forwards_stdin():
-    # --no-capture-output must be present, else `conda run` drops stdin and the
-    # runner reads an empty document.
-    cmd = CondaBackend("vhmodels-mole").build_command(["--project", "mole"])
+def test_conda_worker_forwards_output():
+    cmd = CondaBackend("vhmodels-mole").build_worker_start_command("/tmp/w.sock")
     assert "--no-capture-output" in cmd
-
-
-def test_conda_build_command_does_not_mutate_input():
-    backend = CondaBackend("vhmodels-mole")
-    script_args = ["--project", "mole"]
-    backend.build_command(script_args)
-    assert script_args == ["--project", "mole"]  # list(...) copy, not in place
 
 
 def test_conda_is_available_true(monkeypatch):
@@ -76,6 +65,14 @@ def test_conda_is_available_false(monkeypatch):
 
     monkeypatch.setattr(backends.subprocess, "run", lambda *a, **k: FakeResult())
     assert CondaBackend("vhmodels-mole").is_available() is False
+
+
+def test_conda_runtime_lookup(monkeypatch):
+    monkeypatch.setattr(backends.shutil, "which", lambda executable: "/bin/conda")
+    assert CondaBackend("vhmodels-mole").is_runtime_available() is True
+
+    monkeypatch.setattr(backends.shutil, "which", lambda executable: None)
+    assert CondaBackend("vhmodels-mole").is_runtime_available() is False
 
 
 def test_conda_subprocess_env_strips_pythonpath(monkeypatch):
@@ -95,26 +92,6 @@ def test_conda_subprocess_env_passes_other_vars_through(monkeypatch):
 
 
 # --- ApptainerBackend ------------------------------------------------------
-
-
-def test_apptainer_build_command():
-    backend = ApptainerBackend(
-        "/images/vhmodels-prottrans.sif",
-        use_lima=False,
-    )
-    cmd = backend.build_command(["--project", "prottrans", "--model", "xl"])
-    assert cmd == [
-        "apptainer",
-        "exec",
-        "/images/vhmodels-prottrans.sif",
-        "/opt/venv/bin/python",
-        "-m",
-        "vhmodels.vh_checker.embed",
-        "--project",
-        "prottrans",
-        "--model",
-        "xl",
-    ]
 
 
 def test_apptainer_is_available_for_sif_file(tmp_path):
@@ -139,36 +116,6 @@ def test_apptainer_subprocess_env_strips_pythonpath(monkeypatch):
     assert "PYTHONPATH" not in env
     assert "APPTAINERENV_PYTHONPATH" not in env
     assert env["APPTAINER_BINDPATH"] == "/data"
-
-
-def test_apptainer_build_command_uses_lima_on_macos(monkeypatch, tmp_path):
-    workdir = tmp_path / "working directory"
-    workdir.mkdir()
-    image_path = tmp_path / "images with spaces" / "prottrans.sif"
-    monkeypatch.chdir(workdir)
-
-    backend = ApptainerBackend(image_path, use_lima=True)
-    command = backend.build_command(["--project", "prottrans"])
-
-    assert command[:7] == [
-        "limactl",
-        "shell",
-        "--tty=false",
-        "--preserve-env",
-        "--workdir",
-        str(backends.Path.home().resolve()),
-        lima_utils.LIMA_INSTANCE,
-    ]
-    assert command[7:] == [
-        "apptainer",
-        "exec",
-        str(image_path),
-        "/opt/venv/bin/python",
-        "-m",
-        "vhmodels.vh_checker.embed",
-        "--project",
-        "prottrans",
-    ]
 
 
 def test_apptainer_runtime_lookup_depends_on_launcher(monkeypatch):

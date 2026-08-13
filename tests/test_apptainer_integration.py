@@ -22,7 +22,7 @@ _RUN_INTEGRATION = os.environ.get("VHMODELS_RUN_APPTAINER_INTEGRATION") == "1"
 _PROJECT = "persistent-fake"
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _PACKAGE_ROOT = _REPOSITORY_ROOT / "vhmodels"
-_FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "apptainer_tiny"
+_FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "persistent_worker"
 _IS_MACOS = platform.system() == "Darwin"
 _APPTAINER_OPTION_ENV = (
     "APPTAINER_BIND",
@@ -79,10 +79,14 @@ def _stage_build_context(build_context):
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
     )
     shutil.copytree(
-        _FIXTURE_ROOT / "PersistentFake",
+        _FIXTURE_ROOT,
         build_context / "vhmodels" / "models" / "PersistentFake",
+        ignore=shutil.ignore_patterns("apptainer.def"),
     )
-    shutil.copy2(_FIXTURE_ROOT / "Apptainer.def", build_context / "Apptainer.def")
+    shutil.copy2(
+        _FIXTURE_ROOT / "apptainer.def",
+        build_context / "Apptainer.def",
+    )
 
 
 def _build_image(image_path, build_context):

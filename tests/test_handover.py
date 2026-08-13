@@ -7,9 +7,14 @@ import subprocess
 import pytest
 
 from vhmodels.utils import lima_utils
+from vhmodels.utils import subprocess_utils
 from vhmodels.vh_checker import backends, factory
-from vhmodels.vh_checker import embed as embed_runner
-from vhmodels.vh_checker.factory import _extract_result, _run_subprocess, load_model
+from vhmodels.vh_checker.factory import (
+    _extract_frame,
+    _run_subprocess,
+    _unwrap_model_result,
+    load_model,
+)
 from vhmodels.vh_checker.protocol import (
     EMBED_MESSAGE_TYPE,
     LOAD_MESSAGE_TYPE,
@@ -22,12 +27,12 @@ def _frame(obj):
     return f"{RESULT_MARKER}{json.dumps(obj)}{RESULT_MARKER}\n"
 
 
-# --- _extract_result -------------------------------------------------------
+# --- result parsing --------------------------------------------------------
 
 
 def test_extract_clean_frame():
     stdout = _frame({"output": [1, 2, 3]})
-    assert _extract_result(stdout, "") == [1, 2, 3]
+    assert _extract_frame(stdout, "") == {"output": [1, 2, 3]}
 
 
 def test_extract_ignores_surrounding_noise():
@@ -38,45 +43,45 @@ def test_extract_ignores_surrounding_noise():
         + _frame({"output": {"k": "v"}})
         + "trailing log line\n"
     )
-    assert _extract_result(stdout, "") == {"k": "v"}
+    assert _extract_frame(stdout, "") == {"output": {"k": "v"}}
 
 
 def test_extract_allows_marker_text_inside_model_data():
     value = f"before {RESULT_MARKER} after"
-    assert _extract_result(_frame({"output": value}), "") == value
+    assert _extract_frame(_frame({"output": value}), "") == {"output": value}
 
 
 def test_extract_no_markers_fails():
     with pytest.raises(ValueError, match="no opening marker"):
-        _extract_result("just some noise, no markers here", "")
+        _extract_frame("just some noise, no markers here", "")
 
 
 def test_extract_missing_closing_marker_fails():
     # Opening marker present but truncated before the close (child killed).
     truncated = RESULT_MARKER + '{"output": [1, 2'
     with pytest.raises(ValueError, match="truncated"):
-        _extract_result(truncated, "stderr detail")
+        _extract_frame(truncated, "stderr detail")
 
 
 def test_extract_non_json_between_markers_fails():
     bad = f"{RESULT_MARKER}not json{RESULT_MARKER}"
     with pytest.raises(ValueError, match="not valid JSON"):
-        _extract_result(bad, "")
+        _extract_frame(bad, "")
 
 
 def test_extract_missing_output_key_fails():
     with pytest.raises(ValueError, match="missing 'output' key"):
-        _extract_result(_frame({"something_else": 1}), "")
+        _unwrap_model_result({"something_else": 1})
 
 
 def test_extract_error_includes_stderr():
     with pytest.raises(ValueError, match="boom on stderr"):
-        _extract_result("no markers", "boom on stderr")
+        _extract_frame("no markers", "boom on stderr")
 
 
 def test_extract_does_not_double_wrap():
     # Model already returns an "output" envelope; result must be the inner value.
-    result = _extract_result(_frame({"output": {"prediction": 42}}), "")
+    result = _unwrap_model_result({"output": {"prediction": 42}})
     assert result == {"prediction": 42}
 
 
@@ -118,9 +123,11 @@ def test_timeout_kills_process_group(monkeypatch):
         return FakeProc()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(factory.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(subprocess_utils.os, "getpgid", lambda pid: pid)
     monkeypatch.setattr(
-        factory.os, "killpg", lambda pgid, sig: recorded["signals"].append((pgid, sig))
+        subprocess_utils.os,
+        "killpg",
+        lambda pgid, sig: recorded["signals"].append((pgid, sig)),
     )
 
     with pytest.raises(RuntimeError, match="exceeded 1s"):
@@ -152,10 +159,12 @@ def test_terminate_group_escalates_sigterm_then_sigkill(monkeypatch):
                 raise subprocess.TimeoutExpired(cmd="x", timeout=timeout)
             return 0  # dies after SIGKILL
 
-    monkeypatch.setattr(factory.os, "getpgid", lambda pid: pid)
-    monkeypatch.setattr(factory.os, "killpg", lambda pgid, sig: sent.append(sig))
+    monkeypatch.setattr(subprocess_utils.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(
+        subprocess_utils.os, "killpg", lambda pgid, sig: sent.append(sig)
+    )
 
-    factory._terminate_group(FakeProc())
+    subprocess_utils.terminate_process_group(FakeProc())
 
     # Graceful first, then forceful
     assert sent == [signal.SIGTERM, signal.SIGKILL]
@@ -179,9 +188,9 @@ def test_run_subprocess_interrupt_kills_process_group(monkeypatch):
             return 0
 
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: FakeProc())
-    monkeypatch.setattr(factory.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(subprocess_utils.os, "getpgid", lambda pid: pid)
     monkeypatch.setattr(
-        factory.os, "killpg", lambda pgid, sig: sent.append((pgid, sig))
+        subprocess_utils.os, "killpg", lambda pgid, sig: sent.append((pgid, sig))
     )
 
     with pytest.raises(KeyboardInterrupt):
@@ -190,66 +199,47 @@ def test_run_subprocess_interrupt_kills_process_group(monkeypatch):
     assert sent == [(4242, signal.SIGTERM)]
 
 
-# --- NDJSON request path ---------------------------------------------------
+# --- Persistent proxy path -------------------------------------------------
 
 
-def test_modelproxy_embed_sends_ndjson_messages(monkeypatch):
-    captured = {}
+def test_modelproxy_conda_uses_one_manager_for_many_requests(monkeypatch, tmp_path):
+    recorded = {"embed": [], "close": 0}
 
-    def fake_run_subprocess(cmd, payload, subprocess_env, timeout):
-        captured["cmd"] = cmd
-        captured["payload"] = payload
-        captured["subprocess_env"] = subprocess_env
-        captured["timeout"] = timeout
-        return (_frame({"output": {"prediction": 42}}), "")
+    class RecordingManager:
+        def __init__(self, **kwargs):
+            recorded["init"] = kwargs
 
-    monkeypatch.setattr(factory, "_run_subprocess", fake_run_subprocess)
+        def embed(self, **kwargs):
+            recorded["embed"].append(kwargs)
+            return {"output": len(recorded["embed"])}
+
+        @property
+        def is_started(self):
+            return bool(recorded["embed"])
+
+        def close(self):
+            recorded["close"] += 1
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(factory, "CondaProcessManager", RecordingManager)
     monkeypatch.setattr(
-        "vhmodels.vh_checker.backends.CondaBackend.is_available", lambda self: True
+        backends.CondaBackend, "is_runtime_available", lambda self: True
     )
-
-    model = load_model("dinobloom", model="s", foo="bar", answer=42)
-    result = model.embed({"text": "hello"})
-
-    messages = [json.loads(line) for line in captured["payload"].splitlines()]
-    assert messages == [
-        {
-            MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
-            "load_kwargs": {"foo": "bar", "answer": 42},
-        },
-        {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": {"text": "hello"}},
-    ]
-    assert result == {"prediction": 42}
-
-
-def test_conda_remains_one_shot_and_forwards_embed_kwargs(monkeypatch):
-    payloads = []
-
-    def fake_run_subprocess(cmd, payload, subprocess_env, timeout):
-        payloads.append(payload)
-        return (_frame({"output": len(payloads)}), "")
-
-    monkeypatch.setattr(factory, "_run_subprocess", fake_run_subprocess)
-    monkeypatch.setattr(
-        "vhmodels.vh_checker.backends.CondaBackend.is_available", lambda self: True
-    )
+    monkeypatch.setattr(backends.CondaBackend, "is_available", lambda self: True)
 
     model = load_model("dinobloom", model="s", device="cpu")
     assert model.embed("first", batch_size=2) == 1
     assert model.embed("second", batch_size=4) == 2
 
-    messages = [
-        [json.loads(line) for line in payload.splitlines()] for payload in payloads
+    assert recorded["init"]["project"] == "dinobloom"
+    assert recorded["init"]["model"] == "s"
+    assert recorded["init"]["load_kwargs"] == {"device": "cpu"}
+    assert recorded["embed"] == [
+        {"input": "first", "kwargs": {"batch_size": 2}, "cwd": tmp_path},
+        {"input": "second", "kwargs": {"batch_size": 4}, "cwd": tmp_path},
     ]
-    assert len(messages) == 2
-    assert [request[0][MESSAGE_TYPE_KEY] for request in messages] == [
-        LOAD_MESSAGE_TYPE,
-        LOAD_MESSAGE_TYPE,
-    ]
-    assert [request[1]["kwargs"] for request in messages] == [
-        {"batch_size": 2},
-        {"batch_size": 4},
-    ]
+    model.close()
+    assert recorded["close"] == 1
 
 
 def test_modelproxy_apptainer_starts_loads_and_reuses_instance(monkeypatch, tmp_path):
@@ -429,74 +419,3 @@ def test_image_path_is_rejected_for_conda(tmp_path):
 def test_load_model_stores_load_kwargs():
     model = load_model("dinobloom", foo="bar")
     assert model.load_kwargs == {"foo": "bar"}
-
-
-def test_child_dispatch_forwards_load_kwargs_and_embed_input():
-    calls = []
-
-    class FakeInstance:
-        def load_model(self, model, **kwargs):
-            calls.append(("load_model", model, kwargs))
-
-        def embed(self, input, **kwargs):
-            calls.append(("embed", input, kwargs))
-            return {"output": {"prediction": 7}}
-
-    result = embed_runner._dispatch_embed(
-        FakeInstance(),
-        "s",
-        [
-            {MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE, "load_kwargs": {"foo": "bar"}},
-            {
-                MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE,
-                "input": {"text": "hello"},
-                "kwargs": {"batch_size": 8},
-            },
-        ],
-    )
-
-    assert calls == [
-        ("load_model", "s", {"foo": "bar"}),
-        ("embed", {"text": "hello"}, {"batch_size": 8}),
-    ]
-    assert result == {"output": {"prediction": 7}}
-
-
-def test_child_dispatch_treats_missing_load_kwargs_as_empty():
-    calls = []
-
-    class FakeInstance:
-        def load_model(self, model, **kwargs):
-            calls.append(("load_model", model, kwargs))
-
-        def embed(self, input):
-            calls.append(("embed", input))
-            return {"output": input}
-
-    result = embed_runner._dispatch_embed(
-        FakeInstance(),
-        None,
-        [
-            {MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE},
-            {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": "hello"},
-        ],
-    )
-
-    assert calls == [("load_model", None, {}), ("embed", "hello")]
-    assert result == {"output": "hello"}
-
-
-def test_child_dispatch_unknown_message_type_fails():
-    class FakeInstance:
-        def load_model(self, model, **kwargs):
-            return None
-
-    with pytest.raises(ValueError, match="Unknown message type 'predict'"):
-        embed_runner._dispatch_embed(
-            FakeInstance(),
-            "s",
-            [
-                {MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE, "load_kwargs": {}},
-                {MESSAGE_TYPE_KEY: "predict", "input": "hello"},
-            ],
-        )

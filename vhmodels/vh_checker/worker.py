@@ -1,9 +1,8 @@
-"""Persistent model worker used by Apptainer instances.
+"""Persistent model worker used by isolated runtime processes.
 
 The server owns the model object and communicates over a Unix-domain socket.
-The request client is intentionally tiny: it is launched with ``apptainer exec
-instance://...`` for each host request and relays one JSON message to the
-already-loaded server.
+Apptainer launches the request CLI as a lightweight relay, while Conda connects
+to the same socket protocol directly from the host process.
 """
 
 import argparse
@@ -14,7 +13,6 @@ from pathlib import Path
 import signal
 import socket
 import sys
-import time
 import traceback
 
 from vhmodels.vh_checker.base import BaseModel
@@ -23,19 +21,10 @@ from vhmodels.vh_checker.protocol import (
     LOAD_MESSAGE_TYPE,
     MESSAGE_TYPE_KEY,
     RESULT_MARKER,
+    encode_message,
+    read_message,
+    send_request,
 )
-
-
-def _encode_message(message):
-    return (json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8")
-
-
-def _read_message(connection):
-    with connection.makefile("r", encoding="utf-8", errors="replace") as stream:
-        line = stream.readline()
-    if not line:
-        raise RuntimeError("The model worker closed the connection without a response.")
-    return json.loads(line)
 
 
 @contextmanager
@@ -130,17 +119,17 @@ def serve(socket_path):
             connection, _ = server.accept()
             with connection:
                 try:
-                    request = _read_message(connection)
+                    request = read_message(connection)
                     result = worker.handle(request)
                     response = {"ok": True, "result": result}
-                    encoded_response = _encode_message(response)
+                    encoded_response = encode_message(response)
                 except Exception as error:
                     traceback.print_exc(file=sys.stderr)
                     response = {
                         "ok": False,
                         "error": f"{type(error).__name__}: {error}",
                     }
-                    encoded_response = _encode_message(response)
+                    encoded_response = encode_message(response)
                 try:
                     connection.sendall(encoded_response)
                 except OSError:
@@ -160,33 +149,8 @@ def serve(socket_path):
 
 def request(socket_path, connect_timeout):
     """Relay one stdin JSON request to a running worker and frame its reply."""
-    payload = sys.stdin.read()
-    message = json.loads(payload)
-
-    connection = None
-    deadline = time.monotonic() + connect_timeout
-    try:
-        while True:
-            candidate = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            try:
-                candidate.connect(socket_path)
-                connection = candidate
-                break
-            except OSError as error:
-                candidate.close()
-                if time.monotonic() >= deadline:
-                    raise RuntimeError(
-                        f"Model worker socket '{socket_path}' was not ready within "
-                        f"{connect_timeout:g}s."
-                    ) from error
-                time.sleep(0.05)
-
-        connection.sendall(_encode_message(message))
-        connection.shutdown(socket.SHUT_WR)
-        response = _read_message(connection)
-    finally:
-        if connection is not None:
-            connection.close()
+    message = json.loads(sys.stdin.read())
+    response = send_request(socket_path, message, connect_timeout)
 
     sys.stdout.write(
         RESULT_MARKER + json.dumps(response, ensure_ascii=False) + RESULT_MARKER + "\n"
