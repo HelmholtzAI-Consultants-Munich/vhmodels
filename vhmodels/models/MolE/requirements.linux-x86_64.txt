@@ -1,4 +1,5 @@
 setuptools
+pydantic
 rdkit==2022.3.3
 torch==2.9.1+cu126
 numpy==1.24.3

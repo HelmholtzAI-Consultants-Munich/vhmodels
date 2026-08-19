@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 
-from vhmodels.registry import MODEL_REGISTRY
 from vhmodels.vh_checker.backends import get_backend
 from vhmodels.vh_checker.process_manager import (
     ApptainerProcessManager,
@@ -13,6 +12,24 @@ from vhmodels.vh_checker.protocol import RESULT_MARKER
 from vhmodels.utils.subprocess_utils import run_subprocess as _run_subprocess
 
 DEFAULT_TIMEOUT = 600
+
+# vhmodels/__init__.py imports this module to expose load_model(), and that
+# import runs inside every isolated model worker (including dependency-free
+# test fixtures with no third-party packages at all -- see
+# tests/fixtures/persistent_worker). vhmodels.models.registry needs Pydantic,
+# so it must only be imported lazily, once load_model() actually runs on the
+# host. Tests override the cache directly, e.g.
+# monkeypatch.setattr(factory, "_registry", Registry(models_dir=...)).
+_registry = None
+
+
+def _get_registry():
+    global _registry
+    if _registry is None:
+        from vhmodels.models.registry import Registry
+
+        _registry = Registry()
+    return _registry
 
 
 def _extract_frame(stdout, stderr):
@@ -139,10 +156,13 @@ class ModelProxy:
 
 
 def load_model(project, model=None, runtime="conda", image_path=None, **load_kwargs):
-    if project not in list(MODEL_REGISTRY.keys()):
+    registry = _get_registry()
+    if not registry.has_model(project):
         raise ValueError(f"Model '{project}' not found.")
 
-    env_name = "vhmodels-" + project
+    manifest = registry.get_model(project)
+    conda_runtime = manifest.runtimes.conda
+    env_name = conda_runtime.env_name if conda_runtime else f"vhmodels-{project}"
     if runtime == "apptainer":
         # Match the default output of ``create-apptainer-image``. Resolve the
         # path now so changing the working directory between load and embed

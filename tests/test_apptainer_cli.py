@@ -81,7 +81,7 @@ def test_create_apptainer_image_renders_and_builds_definition(
         captured["kwargs"] = kwargs
         captured["definition"] = Path(command[-1]).read_text(encoding="utf-8")
         captured["staged_registry"] = (
-            kwargs["cwd"] / "vhmodels" / "registry.py"
+            kwargs["cwd"] / "vhmodels" / "models" / "registry.py"
         ).is_file()
         return subprocess.CompletedProcess(command, 0)
 

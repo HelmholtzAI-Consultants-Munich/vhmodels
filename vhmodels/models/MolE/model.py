@@ -1,13 +1,16 @@
 from vhmodels.vh_checker.base import BaseModel
+from vhmodels.models.registry import REGISTRY
+from vhmodels.models.source_resolver import SourceResolver
+
 import torch
 import yaml
-from huggingface_hub import hf_hub_download
 from mole_package import ginet_concat, mole_representation, dataset_representation
 
 
 class MolE(BaseModel):
+    PROJECT = "mole"
+
     def __init__(self):
-        self.repo = "virtual-human-chc/MolE"
         self.model = None
         self.xgb = None
         self.device = None
@@ -26,16 +29,18 @@ class MolE(BaseModel):
         -------
         None
         """
+        manifest = REGISTRY.resolve(self.PROJECT, model or "default")
+        resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
+
         self.device = (
             "cuda:0" if self.device == "auto" and torch.cuda.is_available() else "cpu"
         )
 
-        cfg = yaml.safe_load(open(hf_hub_download(self.repo, "config.yaml")))
+        weights = resources["weights"].files
+        cfg = yaml.safe_load(open(weights["config"]))
         self.model = ginet_concat.GINet(**cfg["model"]).to(self.device)
         self.model.load_state_dict(
-            torch.load(
-                hf_hub_download(self.repo, "model.pth"), map_location=self.device
-            )
+            torch.load(weights["checkpoint"], map_location=self.device)
         )
 
     def embed(self, input, **kwargs):

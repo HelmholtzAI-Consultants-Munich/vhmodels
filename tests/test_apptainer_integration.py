@@ -14,6 +14,7 @@ import tempfile
 
 import pytest
 
+from vhmodels.models.registry import Registry
 from vhmodels.utils import lima_utils
 from vhmodels.vh_checker import factory
 
@@ -189,11 +190,10 @@ def test_persistent_worker_reuse_cleanup_and_restart(
     # test's two host-visible files explicit before the instance starts.
     monkeypatch.setenv("APPTAINER_BINDPATH", str(shared_runtime_directory))
     monkeypatch.chdir(shared_runtime_directory)
-    monkeypatch.setitem(
-        factory.MODEL_REGISTRY,
-        _PROJECT,
-        {"class_path": "PersistentFake.model.PersistentFake"},
-    )
+    # The host-side registry only needs to know "persistent-fake" exists; the
+    # container runs its own staged, dependency-free copy of the fixture and
+    # never touches vhmodels.models.registry (see PersistentFake/model.py).
+    monkeypatch.setattr(factory, "_registry", Registry(models_dir=_FIXTURE_ROOT.parent))
 
     model = factory.load_model(
         project=_PROJECT,

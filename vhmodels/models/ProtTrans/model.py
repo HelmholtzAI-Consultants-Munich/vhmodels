@@ -1,4 +1,6 @@
 from vhmodels.vh_checker.base import BaseModel
+from vhmodels.models.registry import REGISTRY
+from vhmodels.models.source_resolver import SourceResolver
 
 from transformers import T5EncoderModel, T5Tokenizer
 from transformers import AlbertModel, AlbertTokenizer
@@ -16,6 +18,19 @@ import re
 
 
 class ProtTrans(BaseModel):
+    PROJECT = "prottrans"
+
+    # prot_electra_bfd needs generator/discriminator-specific post-processing
+    # in embed() even though it shares the encoder-output shape of the other
+    # Electra variants; keep the set alongside the variants it identifies.
+    _ELECTRA_VARIANTS = frozenset(
+        {
+            "prot_electra_generator_bfd",
+            "prot_electra_discriminator_bfd",
+            "prot_electra_bfd",
+        }
+    )
+
     def __init__(self):
         self.model_specs = {
             "prot_t5_xl_uniref50": (T5Tokenizer, T5EncoderModel),
@@ -33,6 +48,7 @@ class ProtTrans(BaseModel):
         self.tokenizer = None
         self.model = None
         self.device = None
+        self.variant = None
 
     def load_model(self, model=None, **kwargs):
         """
@@ -66,28 +82,26 @@ class ProtTrans(BaseModel):
             kwargs.get("device", "cuda" if torch.cuda.is_available() else "cpu")
         )
 
-        self.model_name = f"virtual-human-chc/{model}"
-
         if model not in self.model_specs:
             raise ValueError(
                 f"Unsupported model '{model}'. "
                 f"Supported models: {', '.join(self.model_specs.keys())}"
             )
+        self.variant = model
+
+        # prot_electra_bfd's tokenizer/weights sources point at the
+        # generator/discriminator repos respectively -- see
+        # manifests/prot_electra_bfd.json. Every other variant's sources
+        # resolve to the same "virtual-human-chc/{variant}" repo, letting
+        # transformers.from_pretrained() do the rest.
+        manifest = REGISTRY.resolve(self.PROJECT, model)
+        resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
 
         tokenizer_cls, model_cls = self.model_specs[model]
-
-        if model == "prot_electra_bfd":
-            self.tokenizer = tokenizer_cls.from_pretrained(
-                "virtual-human-chc/prot_electra_generator_bfd", do_lower_case=False
-            )
-            self.model = model_cls.from_pretrained(
-                "virtual-human-chc/prot_electra_discriminator_bfd"
-            )
-        else:
-            self.tokenizer = tokenizer_cls.from_pretrained(
-                self.model_name, do_lower_case=False
-            )
-            self.model = model_cls.from_pretrained(self.model_name)
+        self.tokenizer = tokenizer_cls.from_pretrained(
+            resources["tokenizer"].repo_id, do_lower_case=False
+        )
+        self.model = model_cls.from_pretrained(resources["weights"].repo_id)
 
         self.model = self.model.to(self.device)
 
@@ -146,11 +160,7 @@ class ProtTrans(BaseModel):
                 input_ids=input_ids, attention_mask=attention_mask
             )
 
-        if self.model_name in [
-            "virtual-human-chc/prot_electra_generator_bfd",
-            "virtual-human-chc/prot_electra_discriminator_bfd",
-            "virtual-human-chc/prot_electra_bfd",
-        ]:
+        if self.variant in self._ELECTRA_VARIANTS:
             embedding = embedding_repr[0].cpu().numpy()
 
             # Remove padding (\<pad\>) and special tokens (\</s\>) that is added by the model

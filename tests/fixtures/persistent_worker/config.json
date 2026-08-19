@@ -1,6 +1,0 @@
-{
-  "name": "persistent-fake",
-  "supported_platforms": ["linux-x86_64", "macos-arm64"],
-  "class_path": "PersistentFake.model.PersistentFake",
-  "description": "Dependency-free persistent worker integration fixture"
-}

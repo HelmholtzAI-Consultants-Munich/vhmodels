@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import re
+import sys
 import threading
 import uuid
 
@@ -25,6 +26,10 @@ class ModelWorkerError(RuntimeError):
 
 
 _MISSING_WORKER_MODULE = "No module named vhmodels.vh_checker.worker"
+
+
+def _log(tag, message):
+    print(f"[{tag}] {message}", file=sys.stderr)
 
 
 def _safe_name_component(value):
@@ -129,12 +134,14 @@ class ModelProcessManager:
             raise RuntimeError("This model process manager is closed.")
 
         self.transport.prepare()
+        _log("BACKEND", f"{self.runtime_name} runtime ready")
         # A launcher may create its worker before reporting an error, so mark
         # ownership before starting and make the exact identity safe to stop.
         self._worker_may_exist = True
         self._register_atexit()
         try:
             self.transport.start(self.worker_name, self.socket_path, self.timeout)
+            _log("PROCESS MANAGER", f"{self.runtime_name} worker started")
             self._request_locked(
                 {
                     MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
@@ -150,6 +157,12 @@ class ModelProcessManager:
                 raise translated from error
             raise
         self._started = True
+        # TODO: move somehow to worker-side logging
+        _log("REGISTRY", f"Model manifest '{self.project}' ({self.model}) resolved")
+        _log(
+            "RESOURCES", f"Local resources resolved for '{self.project}' ({self.model})"
+        )
+        _log("MODEL WORKER", f"Model '{self.project}' ({self.model}) fully loaded")
 
     def embed(self, input, kwargs=None, cwd=None):
         """Send one request, starting and loading the worker if necessary."""
@@ -173,6 +186,7 @@ class ModelProcessManager:
                     "Call close() again before reusing this model."
                 )
             self._start_locked()
+            _log("MODEL", f"Starting '{self.project}' embedding...")
             try:
                 return self._request_locked(message)
             except ModelWorkerError:
@@ -212,6 +226,7 @@ class ModelProcessManager:
             self._stop_locked(suppress_errors=False)
             self._closed = True
         self._unregister_atexit()
+        _log("MODEL", f"Model '{self.project}' instance closed")
 
     def _close_at_exit(self):
         if os.getpid() != self._creator_pid:

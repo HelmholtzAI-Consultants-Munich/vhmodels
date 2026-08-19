@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "vhmodels"
 version = "0.1.0"
 description = "Virtual Human CHC Model Zoo"
-dependencies = []
+dependencies = ["pydantic>=2"]
 
 [project.optional-dependencies]
 cli = ["click", "rich"]
@@ -20,7 +20,13 @@ where = ["."]
 include = ["vhmodels*"]
 
 [tool.setuptools.package-data]
-vhmodels = ["envs/*", "models/*/*.json", "models/*/*.txt", "models/*/*.yml"]
+vhmodels = [
+    "envs/*",
+    "models/*/*.json",
+    "models/*/manifests/*.json",
+    "models/*/*.txt",
+    "models/*/*.yml",
+]
 
 [tool.pytest.ini_options]
 markers = [

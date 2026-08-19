@@ -1,6 +1,7 @@
 from vhmodels.vh_checker.base import BaseModel
+from vhmodels.models.registry import REGISTRY
+from vhmodels.models.source_resolver import SourceResolver
 
-from huggingface_hub import hf_hub_download
 import torch
 import torch.nn as nn
 from torchvision import transforms
@@ -9,13 +10,12 @@ from PIL import Image
 
 
 class DinoBloom(BaseModel):
+    PROJECT = "dinobloom"
+
     def __init__(self):
-        self.model_config = {
-            "s": ("dinov2_vits14", 384),
-            "b": ("dinov2_vitb14", 768),
-            "l": ("dinov2_vitl14", 1024),
-            "g": ("dinov2_vitg14", 1536),
-        }
+        # embed_dim isn't part of the manifest -- it's assembly detail, not a
+        # resource location, so it stays here alongside the rest of load_model.
+        self.embed_dims = {"s": 384, "b": 768, "l": 1024, "g": 1536}
 
         self.img_transform = transforms.Compose(
             [
@@ -33,8 +33,8 @@ class DinoBloom(BaseModel):
     def load_model(self, model=None, **kwargs):
         """
         Downloads and loads the specified model version - S, B, L, G - of the DinoBloom models. This includes the following steps:
-        - Loading “facebookresearch/dinov2”
-        - Load “pytorch_model_{model}.bin”
+        - Resolving the "facebookresearch/dinov2" architecture (torch_hub source)
+        - Resolving the "pytorch_model_{variant}.bin" weights (huggingface source)
 
         For more information, check (link to HF repo).
 
@@ -50,30 +50,29 @@ class DinoBloom(BaseModel):
         ------
         None
         """
-        # Check if the selected model exists
-        if model not in self.model_config:
+        if model not in self.embed_dims:
             raise ValueError(
-                f"Unknown model '{self.model}' in DinoBloom. Available models: {list(self.model_config.keys())}"
+                f"Unknown model '{model}' in DinoBloom. Available models: {list(self.embed_dims)}"
             )
+
+        manifest = REGISTRY.resolve(self.PROJECT, model)
+        resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
 
         # Get user's input for device; otherwise, fall back to pytorch function
         self.device = torch.device(
             kwargs.get("device", "cuda" if torch.cuda.is_available() else "cpu")
         )
 
-        dinov2_model, embed_dim = self.model_config[model]
+        embed_dim = self.embed_dims[model]
+        architecture = resources["architecture"]
 
         # Build the DINOv2 architecture without downloading its pretrained
         # weights; the complete DinoBloom checkpoint below replaces them.
         self.model = torch.hub.load(
-            "facebookresearch/dinov2", dinov2_model, pretrained=False
+            architecture.repo, architecture.entrypoint, pretrained=False
         )
 
-        # Download DinoBloom weights
-        ckpt_path = hf_hub_download(
-            repo_id="virtual-human-chc/DinoBloom", filename=f"pytorch_model_{model}.bin"
-        )
-
+        ckpt_path = resources["weights"].files["checkpoint"]
         ckpt = torch.load(ckpt_path, map_location="cpu")
 
         num_tokens = int(1 + (224 / 14) ** 2)

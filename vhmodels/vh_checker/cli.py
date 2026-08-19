@@ -12,7 +12,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from vhmodels.registry import MODEL_REGISTRY
+from vhmodels.models.registry import REGISTRY
 from vhmodels.utils import lima_utils
 
 
@@ -52,8 +52,8 @@ def list():
     table.add_column("Model Name", style="bold green")
     table.add_column("Description", style="white")
 
-    for i, (name, desc) in enumerate(MODEL_REGISTRY.items(), 1):
-        table.add_row(str(i), name, desc["description"])
+    for i, (name, manifest) in enumerate(REGISTRY.list_models().items(), 1):
+        table.add_row(str(i), name, manifest.model.description)
 
     console.print(table)
 
@@ -122,11 +122,12 @@ def create_env(project):
     if not _check_conda_installed():
         return
 
-    if project not in MODEL_REGISTRY.keys():
+    if not REGISTRY.has_model(project):
         click.echo(f"Error: Model '{project}' is not registered.")
         return
 
-    supported_platforms = MODEL_REGISTRY[project]["supported_platforms"]
+    manifest = REGISTRY.get_model(project)
+    supported_platforms = manifest.supported_platforms
     current_platform = _determine_current_platform()
     if current_platform not in supported_platforms:
         click.echo(
@@ -134,25 +135,16 @@ def create_env(project):
         )
         return
 
-    env_name = f"vhmodels-{project}"  # model_cls.env_name
-
-    # Locate the model directory dynamically (handling potential capitalization)
-    models_dir = Path(__file__).parent.parent / "models"
-    # Find the folder that matches the ID (case-insensitive)
-    target_dir = next(
-        (
-            d
-            for d in models_dir.iterdir()
-            if d.is_dir() and d.name.lower() == project.lower()
-        ),
-        None,
-    )
-
-    if not target_dir:
-        click.echo(f"Error: Could not find directory for project {project}")
+    conda_runtime = manifest.runtimes.conda
+    if conda_runtime is None or current_platform not in conda_runtime.platforms:
+        click.echo(
+            f"Error: no Conda environment is registered for platform '{current_platform}'."
+        )
         return
 
-    env_file = MODEL_REGISTRY[project]["environment_files"][current_platform]
+    env_name = conda_runtime.env_name
+    target_dir = Path(manifest.model_dir)
+    env_file = conda_runtime.platforms[current_platform].environment
     env_path = target_dir / env_file
 
     if not env_path.exists():
@@ -207,8 +199,10 @@ def create_env(project):
 )
 def create_apptainer_image(project, output):
     """Create an Apptainer image for a specific model."""
-    if project not in MODEL_REGISTRY:
+    if not REGISTRY.has_model(project):
         raise click.ClickException(f"Model '{project}' is not registered.")
+
+    manifest = REGISTRY.get_model(project)
 
     host_platform = _determine_current_platform()
     use_lima = host_platform.startswith("macos-")
@@ -220,7 +214,7 @@ def create_apptainer_image(project, output):
     # Linux image that runs natively on the supported HPC platform.
     target_platform = "linux-x86_64" if use_lima else host_platform
 
-    supported_platforms = MODEL_REGISTRY[project]["supported_platforms"]
+    supported_platforms = manifest.supported_platforms
     if target_platform not in supported_platforms:
         raise click.ClickException(
             f"Target platform '{target_platform}' is not supported; "
@@ -229,12 +223,12 @@ def create_apptainer_image(project, output):
 
     package_dir = Path(__file__).resolve().parent.parent
     template_path = package_dir / "envs" / "Apptainer"
-    target_dir = Path(MODEL_REGISTRY[project]["abs_path"])
-    apptainer_config = MODEL_REGISTRY[project].get("apptainer", {})
-    python_version = apptainer_config.get("python")
-    requirements_file = apptainer_config.get("requirements")
-    exclude_file = apptainer_config.get("exclude")
-    torch_backend = apptainer_config.get("torch_backend")
+    target_dir = Path(manifest.model_dir)
+    apptainer_config = manifest.runtimes.apptainer
+    python_version = apptainer_config.python if apptainer_config else None
+    requirements_file = apptainer_config.requirements if apptainer_config else None
+    exclude_file = apptainer_config.exclude if apptainer_config else None
+    torch_backend = apptainer_config.torch_backend if apptainer_config else None
     requirements_path = target_dir / requirements_file if requirements_file else None
     exclude_path = target_dir / exclude_file if exclude_file else None
 

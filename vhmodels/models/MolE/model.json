@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "model": {
+    "id": "mole",
+    "version": "1.0.0",
+    "description": "MolE learns task-independent molecular representations of chemicals via Graph Isomorphism Networks (GINs)",
+    "homepage": "https://huggingface.co/virtual-human-chc/MolE"
+  },
+  "implementation": {
+    "class_path": "MolE.model.MolE",
+    "capabilities": ["embed"]
+  },
+  "supported_platforms": ["linux-x86_64", "macos-arm64"],
+  "runtimes": {
+    "conda": {
+      "env_name": "vhmodels-mole",
+      "platforms": {
+        "linux-x86_64": { "environment": "environment.linux-x86_64.yml" },
+        "macos-arm64": { "environment": "environment.macos-arm64.yml" }
+      }
+    },
+    "apptainer": {
+      "platform": "linux-x86_64",
+      "python": "3.10",
+      "requirements": "requirements.linux-x86_64.txt",
+      "torch_backend": "cu126"
+    }
+  },
+  "sources": {
+    "weights": {
+      "type": "huggingface",
+      "repo_id": "virtual-human-chc/MolE",
+      "files": {
+        "config": "config.yaml",
+        "checkpoint": "model.pth"
+      }
+    },
+    "architecture": {
+      "type": "python_package",
+      "name": "mole_package"
+    }
+  }
+}

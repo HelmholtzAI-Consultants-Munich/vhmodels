@@ -9,6 +9,10 @@ runtime dependencies. `vhmodels` executes it in either a per-model Conda
 environment or an Apptainer container. Apptainer images use Ubuntu 24.04 and a
 uv-managed Python environment at `/opt/venv`.
 
+Metadata and resource locations are declared in `model.json` +
+`manifests/<variant>.json`, validated against a Pydantic schema and resolved
+by `vhmodels.models.registry.Registry`; see [docs/manifest.md](docs/manifest.md).
+
 ## Installation
 
 ```bash
@@ -164,11 +168,15 @@ vhmodels
 ├───tests # Tests for core model functionality
 └───vhmodels
     ├───envs # Template for Apptainer environments
-    ├───models # Implementations + Conda/uv dependencies + metadata
-    │   ├───DinoBloom
+    ├───models # Implementations + Conda/uv dependencies + manifests
+    │   ├───DinoBloom # model.json, manifests/<variant>.json, model.py, ...
     │   ├───Hyformer
     │   ├───MolE
-    │   └───ProtTrans
+    │   ├───ProtTrans
+    │   ├───registry.py # Registry: discovers + resolves manifests
+    │   ├───schema.py # Pydantic manifest schema
+    │   ├───source_resolver.py # turns manifest sources into local paths
+    │   └───discovery.py # dependency-free class_path lookup for workers
     ├───utils # Utility functions
     └───vh_checker # CLI + base model interface
 ```

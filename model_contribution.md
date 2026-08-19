@@ -52,32 +52,77 @@ In order for others to easily understand how your model can be used, you need a 
 
 Create a new folder for your model in `vhmodels/models`. The folder needs to contain the following files:
 
-- `config.json`
+- `model.json`
 ```json
 {
-    "name": "<your_model>",
+    "schema_version": "1.0",
+    "model": {
+        "id": "<your_model>",
+        "version": "1.0.0",
+        "description": "short description of <your_model>",
+        "homepage": "link to Hugging Face repository"
+    },
+    "implementation": {
+        "class_path": "<Your_model>.model.<Your_model>"
+    },
     "supported_platforms": ["linux-x86_64"],
-    "environment_files": {
-      "linux-x86_64": "environment.linux-x86_64.yml"
+    "runtimes": {
+        "conda": {
+            "env_name": "vhmodels-<your_model>",
+            "platforms": {
+                "linux-x86_64": { "environment": "environment.linux-x86_64.yml" }
+            }
+        },
+        "apptainer": {
+            "platform": "linux-x86_64",
+            "python": "3.10",
+            "requirements": "requirements.linux-x86_64.txt",
+            "torch_backend": "cu126"
+        }
     },
-    "apptainer": {
-      "python": "3.10",
-      "requirements": "requirements.linux-x86_64.txt",
-      "torch_backend": "cu126"
-    },
-    "conda_env": "vhmodels-<your_model>",
-    "class_path": "<Your_model>.model.<Your_model>",
-    "description": "short description of <your_model>",
-    "link": "link to Hugging Face repository"
+    "sources": {
+        "weights": {
+            "type": "huggingface",
+            "repo_id": "virtual-human-chc/<your_model>"
+        }
+    }
 }
 ```
 
 `supported_platforms` must include `linux-x86_64` for Apptainer. Add
-`macos-arm64` and a matching entry in `environment_files` only when you also
-provide `environment.macos-arm64.yml`. In `apptainer`, `python` and
-`requirements` are required; `torch_backend` is optional and selects the uv
-PyTorch backend (for example, `cu126`). If a transitive package must be omitted,
-set `exclude` to a uv excludes file in the same model directory.
+`macos-arm64` and a matching platform entry under `runtimes.conda.platforms`
+only when you also provide `environment.macos-arm64.yml`. In
+`runtimes.apptainer`, `python` and `requirements` are required; `torch_backend`
+is optional and selects the uv PyTorch backend (for example, `cu126`). If a
+transitive package must be omitted, set `exclude` to a uv excludes file in the
+same model directory.
+
+`sources` describes where your model's resources come from, as one or more
+independently typed entries (`huggingface`, `torch_hub`, `url`, `git`, `local`,
+`python_package` -- see [docs/manifest.md](docs/manifest.md) for the full
+field reference). It is validated by Pydantic and resolved for you at load
+time through `vhmodels.models.registry.REGISTRY` and
+`vhmodels.models.source_resolver.SourceResolver`; `model.py` should read
+already-resolved paths/repo ids from there rather than calling
+`hf_hub_download` or similar directly.
+
+- `manifests/<variant>.json` (one per variant your model exposes, e.g. the
+  value passed as `vhmodels.load_model(project=..., model=<variant>)`)
+
+```json
+{
+    "variant": "<variant_id>"
+}
+```
+
+A variant manifest only needs a `sources` block when that variant's resources
+differ from `model.json`'s defaults -- for example when a filename or repo id
+depends on the variant. String fields in `model.json`'s `sources` may contain
+a `{variant}` placeholder, substituted with the requested variant id when the
+manifest is resolved; see `ProtTrans/model.json` and its
+`manifests/prot_electra_bfd.json` override for a worked example. A model with
+only one variant still needs exactly one file here, conventionally
+`manifests/default.json`.
 
 - `environment.linux-x86_64.yml`
 
@@ -102,15 +147,19 @@ syntax. Keep its Python and package versions consistent with the Conda file.
 The shared definition starts from Ubuntu 24.04, installs these requirements with
 uv, and stores the finished environment at `/opt/venv`. uv is supplied by the
 image build; contributors and users do not need it on the host. If a model needs
-additional Ubuntu packages, add them to `vhmodels/envs/Apptainer`.
+additional Ubuntu packages, add them to `vhmodels/envs/Apptainer`. Include
+`pydantic`: unlike the Conda path (which gets it from `vhmodels`' own
+dependencies via `pip install -e`), the Apptainer image only copies the
+`vhmodels` source and installs this file, so `pydantic` must be listed
+explicitly for `model.py` to resolve its manifest.
 
 - `requirements-exclude.linux-x86_64.txt` (optional)
 
 Use an exclusion file only when a transitive dependency conflicts with the
 package selected by the model, as with Hyformer's legacy `rdkit-pypi`
 dependency. List one excluded requirement per line, explain why it is excluded
-in a comment, and reference the file through `apptainer.exclude` in
-`config.json`.
+in a comment, and reference the file through `runtimes.apptainer.exclude` in
+`model.json`.
 
 - `model.py`
 
@@ -120,24 +169,32 @@ easily used in `vhmodels`.
 
 ```python
 from vhmodels.vh_checker.base import BaseModel
+from vhmodels.models.registry import REGISTRY
+from vhmodels.models.source_resolver import SourceResolver
 
 
 class YourModel(BaseModel):
+    PROJECT = "your_model"
+
     def __init__(self):
         self.model = None
 
     def load_model(self, model=None, **kwargs):
         """
-        Downloads and loads the necessary artifacts for YourModel model from Hugging Face.
+        Loads the necessary artifacts for YourModel from the sources declared
+        in model.json / manifests/<variant>.json.
 
         Returns
         -------
         None
         """
+        manifest = REGISTRY.resolve(self.PROJECT, model)
+        resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
 
-        # implement the downloading of the model weights from Hugging Face
-        # and load the model to the correct device
-        # here, you can also add your tokenizer if necessary
+        # `resources["weights"]` is a ResolvedHuggingFace with .repo_id and,
+        # for sources that declare "files", a .files dict of downloaded
+        # local paths -- see docs/manifest.md. Use it to load the model onto
+        # the correct device; add your tokenizer here too if necessary.
 
     def embed(self, input, **kwargs):
         """

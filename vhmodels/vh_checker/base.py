@@ -1,16 +1,21 @@
 # The file contains the interface, which each model will implement:
 # load_model, embed, predict, generate
+#
+# This module runs inside every isolated model worker, including
+# dependency-free test fixtures with no third-party packages installed, so it
+# only uses vhmodels.models.discovery (stdlib-only) to look up a model's
+# class_path -- never the Pydantic-validated Registry in vhmodels.models.registry.
 from abc import ABC, abstractmethod
 import sys
 import os
 import importlib
-from vhmodels.registry import MODEL_REGISTRY
+from vhmodels.models import discovery
 
 
 class BaseModel(ABC):
     @staticmethod
     def get_class(_class):
-        class_path = MODEL_REGISTRY[_class]["class_path"]
+        class_path = discovery.find_class_path(_class)
 
         # Determine the absolute path to your 'models' directory
         # Adjust '..' based on where runner.py sits relative to the models
