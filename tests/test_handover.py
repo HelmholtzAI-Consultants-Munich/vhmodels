@@ -19,6 +19,7 @@ from vhmodels.vh_checker.protocol import (
     EMBED_MESSAGE_TYPE,
     LOAD_MESSAGE_TYPE,
     MESSAGE_TYPE_KEY,
+    PREDICT_MESSAGE_TYPE,
     RESULT_MARKER,
 )
 
@@ -242,6 +243,50 @@ def test_modelproxy_conda_uses_one_manager_for_many_requests(monkeypatch, tmp_pa
     assert recorded["close"] == 1
 
 
+def test_modelproxy_conda_predict_sends_embedding_to_manager(monkeypatch, tmp_path):
+    recorded = {"embed": [], "predict": []}
+
+    class RecordingManager:
+        def __init__(self, **kwargs):
+            recorded["init"] = kwargs
+
+        def embed(self, **kwargs):
+            recorded["embed"].append(kwargs)
+            return {"output": {"embedded": True}}
+
+        def predict(self, **kwargs):
+            recorded["predict"].append(kwargs)
+            return {"output": {"probability": 0.9}}
+
+        @property
+        def is_started(self):
+            return bool(recorded["embed"]) or bool(recorded["predict"])
+
+        def close(self):
+            pass
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(factory, "CondaProcessManager", RecordingManager)
+    monkeypatch.setattr(
+        backends.CondaBackend, "is_runtime_available", lambda self: True
+    )
+    monkeypatch.setattr(backends.CondaBackend, "is_available", lambda self: True)
+
+    model = load_model("mole")
+    embedding = [[0.1, 0.2], [0.3, 0.4]]
+    result = model.predict("molecules.tsv", embedding, strain="all")
+
+    assert result == {"probability": 0.9}
+    assert recorded["predict"] == [
+        {
+            "input": "molecules.tsv",
+            "embedding": embedding,
+            "kwargs": {"strain": "all"},
+            "cwd": tmp_path,
+        }
+    ]
+
+
 def test_modelproxy_apptainer_starts_loads_and_reuses_instance(monkeypatch, tmp_path):
     calls = []
 
@@ -305,6 +350,51 @@ def test_modelproxy_apptainer_starts_loads_and_reuses_instance(monkeypatch, tmp_
 
     model.close()
     assert calls[-1][0][:3] == ["apptainer", "instance", "stop"]
+
+
+def test_modelproxy_apptainer_predict_uses_embed_output(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run_subprocess(cmd, payload, subprocess_env, timeout):
+        calls.append((cmd, payload, subprocess_env, timeout))
+        if "request" not in cmd:
+            return ("", "")
+        message = json.loads(payload)
+        result = None
+        if message[MESSAGE_TYPE_KEY] == EMBED_MESSAGE_TYPE:
+            result = {"output": [[0.1, 0.2]]}
+        elif message[MESSAGE_TYPE_KEY] == PREDICT_MESSAGE_TYPE:
+            result = {"output": {"embedding": message["embedding"]}}
+        return (_frame({"ok": True, "result": result}), "")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(lima_utils, "uses_lima", lambda: False)
+    monkeypatch.setattr(factory, "_run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr(
+        "vhmodels.vh_checker.backends.ApptainerBackend.is_available",
+        lambda self: True,
+    )
+    monkeypatch.setattr(
+        "vhmodels.vh_checker.backends.ApptainerBackend.is_runtime_available",
+        lambda self: True,
+    )
+
+    model = load_model("mole", runtime="apptainer", device="cpu")
+    embedding = model.embed("sequences.smiles")
+    result = model.predict("molecules.tsv", embedding)
+
+    assert result == {"embedding": [[0.1, 0.2]]}
+    request_messages = [
+        json.loads(payload) for cmd, payload, _, _ in calls if "request" in cmd
+    ]
+    assert request_messages[-1] == {
+        MESSAGE_TYPE_KEY: PREDICT_MESSAGE_TYPE,
+        "input": "molecules.tsv",
+        "embedding": [[0.1, 0.2]],
+        "kwargs": {},
+        "cwd": str(tmp_path),
+    }
+    model.close()
 
 
 def test_apptainer_image_path_can_be_overridden(tmp_path):

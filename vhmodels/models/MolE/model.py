@@ -2,9 +2,17 @@ from vhmodels.vh_checker.base import BaseModel
 from vhmodels.models.registry import REGISTRY
 from vhmodels.models.source_resolver import SourceResolver
 
+import pickle
+
+import pandas as pd
 import torch
 import yaml
-from mole_package import ginet_concat, mole_representation, dataset_representation
+from mole_package import (
+    dataset_representation,
+    ginet_concat,
+    mole_antimicrobial_prediction,
+    mole_representation,
+)
 
 
 class MolE(BaseModel):
@@ -13,6 +21,7 @@ class MolE(BaseModel):
     def __init__(self):
         self.model = None
         self.xgb = None
+        self.screening = None
         self.device = None
 
     def load_model(self, model=None, **kwargs):
@@ -43,6 +52,10 @@ class MolE(BaseModel):
             torch.load(weights["checkpoint"], map_location=self.device)
         )
 
+        xgb = resources["xgb"].files
+        self.xgb = pickle.load(open(xgb["model"], "rb"))
+        self.screening = xgb["screening"]
+
     def embed(self, input, **kwargs):
         """
         Creates embeddings for the provided input data.
@@ -67,8 +80,12 @@ class MolE(BaseModel):
         )
         return {"output": emb.tolist()}
 
-    def predict(self, input, **kwargs):
-        pass
+    def predict(self, input, embedding, **kwargs):
+        molecules = pd.read_csv(input, sep="\t")
+        emb_df = pd.DataFrame(embedding, index=molecules["chem_name"].tolist())
+        X = mole_antimicrobial_prediction.add_strains(emb_df, self.screening)
+        probs = self.xgb.predict_proba(X)[:, 1]
+        return {"output": pd.Series(probs, index=X.index).to_dict()}
 
     def generate(self, input, **kwargs):
         pass
@@ -77,5 +94,6 @@ class MolE(BaseModel):
 if __name__ == "__main__":
     model = MolE()
     model.load_model()
-    result = model.embed("example_data/MolE/sequences.smiles")
+    embedding = model.embed("example_data/MolE/sequences.smiles")["output"]
+    result = model.predict("example_data/MolE/examples_molecules.tsv", embedding)
     print(result)

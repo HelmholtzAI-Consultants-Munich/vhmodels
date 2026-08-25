@@ -20,6 +20,7 @@ from vhmodels.vh_checker.protocol import (
     EMBED_MESSAGE_TYPE,
     LOAD_MESSAGE_TYPE,
     MESSAGE_TYPE_KEY,
+    PREDICT_MESSAGE_TYPE,
     RESULT_MARKER,
     encode_message,
     read_message,
@@ -62,6 +63,8 @@ class ModelWorker:
             return self._load(message)
         if message_type == EMBED_MESSAGE_TYPE:
             return self._embed(message)
+        if message_type == PREDICT_MESSAGE_TYPE:
+            return self._predict(message)
         raise ValueError(f"Unknown message type '{message_type}'.")
 
     def _load(self, message):
@@ -94,6 +97,19 @@ class ModelWorker:
 
         with _working_directory(message.get("cwd")):
             return self._model.embed(message.get("input"), **kwargs)
+
+    def _predict(self, message):
+        if not self.is_loaded:
+            raise RuntimeError("The model must be loaded before predicting.")
+
+        kwargs = message.get("kwargs") or {}
+        if not isinstance(kwargs, dict):
+            raise ValueError("kwargs must be a JSON object.")
+
+        with _working_directory(message.get("cwd")):
+            return self._model.predict(
+                message.get("input"), embedding=message.get("embedding"), **kwargs
+            )
 
 
 def serve(socket_path):

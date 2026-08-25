@@ -8,7 +8,7 @@
   },
   "implementation": {
     "class_path": "MolE.model.MolE",
-    "capabilities": ["embed"]
+    "capabilities": ["embed", "predict"]
   },
   "supported_platforms": ["linux-x86_64", "macos-arm64"],
   "runtimes": {
@@ -38,6 +38,14 @@
     "architecture": {
       "type": "python_package",
       "name": "mole_package"
+    },
+    "xgb": {
+      "type": "huggingface",
+      "repo_id": "virtual-human-chc/MolE",
+      "files": {
+        "model": "MolE-XGBoost-08.03.2024_14.20.pkl",
+        "screening": "input/maier_screening_results.tsv.gz"
+      }
     }
   }
 }

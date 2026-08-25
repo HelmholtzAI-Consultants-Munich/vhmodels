@@ -17,10 +17,13 @@
 import vhmodels
 
 with vhmodels.load_model(
-    project="dinobloom", model="s", runtime="apptainer"
+    project="mole", runtime="apptainer"
 ) as model:
-    first = model.embed(input="example_data/DinoBloom/001.bmp")
-    second = model.embed(input="example_data/DinoBloom/001.bmp")
+    embedding = model.embed(input="example_data/MolE/sequences.smiles")
+    prediction = model.predict(
+        input="example_data/MolE/examples_molecules.tsv",
+        embedding=embedding,
+    )
 
-print(f"First result: {first} \n\n")
-print(f"Second result: {second}")
+print(f"Embedding: \n {embedding} \n\n")
+print(f"Prediction: \n{prediction}")

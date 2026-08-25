@@ -202,7 +202,7 @@ class DinoBloom(BaseModel):
         return {"output": final_tensor.tolist()}
 
     def predict(self, input, **kwargs):
-        pass
+        raise NotImplementedError("DinoBloom does not support predict().")
 
     def generate(self, input, **kwargs):
         pass

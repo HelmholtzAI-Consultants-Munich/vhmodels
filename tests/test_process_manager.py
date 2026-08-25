@@ -18,6 +18,7 @@ from vhmodels.vh_checker.protocol import (
     EMBED_MESSAGE_TYPE,
     LOAD_MESSAGE_TYPE,
     MESSAGE_TYPE_KEY,
+    PREDICT_MESSAGE_TYPE,
 )
 
 
@@ -91,9 +92,12 @@ class FakeTransport:
         self.stop_count = 0
         self.load_count = 0
         self.embed_count = 0
+        self.predict_count = 0
         self.model_errors = {}
         self.transport_failures = set()
         self.missing_instances = set()
+        self.predict_model_errors = {}
+        self.predict_transport_failures = set()
 
     @staticmethod
     def extract_frame(stdout, stderr):
@@ -127,8 +131,7 @@ class FakeTransport:
         if message_type == LOAD_MESSAGE_TYPE:
             self.load_count += 1
             response = {"ok": True, "result": None}
-        else:
-            assert message_type == EMBED_MESSAGE_TYPE
+        elif message_type == EMBED_MESSAGE_TYPE:
             self.embed_count += 1
             request_number = self.embed_count
             if request_number in self.transport_failures:
@@ -144,6 +147,29 @@ class FakeTransport:
                     "result": {
                         "output": {
                             "input": message["input"],
+                            "kwargs": message["kwargs"],
+                            "cwd": message["cwd"],
+                        }
+                    },
+                }
+        else:
+            assert message_type == PREDICT_MESSAGE_TYPE
+            self.predict_count += 1
+            request_number = self.predict_count
+            if request_number in self.predict_transport_failures:
+                raise RuntimeError("relay exited before returning a frame")
+            if request_number in self.predict_model_errors:
+                response = {
+                    "ok": False,
+                    "error": self.predict_model_errors[request_number],
+                }
+            else:
+                response = {
+                    "ok": True,
+                    "result": {
+                        "output": {
+                            "input": message["input"],
+                            "embedding": message["embedding"],
                             "kwargs": message["kwargs"],
                             "cwd": message["cwd"],
                         }
@@ -335,6 +361,72 @@ def test_model_worker_remains_loaded_after_model_error(monkeypatch):
         {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": "valid input"}
     ) == {"output": "valid input"}
     assert calls == {"load": 1, "embed": 2}
+
+
+def test_model_worker_dispatches_predict_with_embedding(monkeypatch):
+    calls = []
+
+    class RecordingModel:
+        def load_model(self, model_name, **kwargs):
+            calls.append(("load", model_name, kwargs))
+
+        def predict(self, input, embedding, **kwargs):
+            calls.append(("predict", input, embedding, kwargs))
+            return {"output": {"input": input, "embedding": embedding}}
+
+    monkeypatch.setattr(
+        worker.BaseModel, "get_class", staticmethod(lambda project: RecordingModel)
+    )
+
+    dispatcher = worker.ModelWorker()
+    dispatcher.handle({MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE, "project": "generic-model"})
+
+    result = dispatcher.handle(
+        {
+            MESSAGE_TYPE_KEY: PREDICT_MESSAGE_TYPE,
+            "input": "molecules.tsv",
+            "embedding": [[0.1, 0.2], [0.3, 0.4]],
+            "kwargs": {"threshold": 0.5},
+            "cwd": None,
+        }
+    )
+
+    assert result == {
+        "output": {"input": "molecules.tsv", "embedding": [[0.1, 0.2], [0.3, 0.4]]}
+    }
+    assert calls[1] == (
+        "predict",
+        "molecules.tsv",
+        [[0.1, 0.2], [0.3, 0.4]],
+        {"threshold": 0.5},
+    )
+
+
+def test_model_worker_predict_not_implemented_keeps_model_loaded(monkeypatch):
+    calls = {"load": 0, "predict": 0}
+
+    class EmbedOnlyModel:
+        def load_model(self, model_name, **kwargs):
+            calls["load"] += 1
+
+        def predict(self, input, **kwargs):
+            calls["predict"] += 1
+            raise NotImplementedError("EmbedOnlyModel does not support predict().")
+
+    monkeypatch.setattr(
+        worker.BaseModel, "get_class", staticmethod(lambda project: EmbedOnlyModel)
+    )
+
+    dispatcher = worker.ModelWorker()
+    dispatcher.handle({MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE, "project": "generic-model"})
+
+    with pytest.raises(NotImplementedError, match="does not support predict"):
+        dispatcher.handle(
+            {MESSAGE_TYPE_KEY: PREDICT_MESSAGE_TYPE, "input": "x", "embedding": []}
+        )
+
+    assert dispatcher.is_loaded is True
+    assert calls == {"load": 1, "predict": 1}
 
 
 def test_conda_manager_starts_once_requests_directly_and_reaps(tmp_path):
@@ -551,6 +643,43 @@ def test_manager_starts_and_loads_once_for_many_requests(make_manager, tmp_path)
         },
     ]
     assert all(call["environment"] is backend.environment for call in transport.calls)
+
+
+def test_manager_predict_sends_embedding_and_reuses_worker(make_manager, tmp_path):
+    manager, backend, transport = make_manager(
+        project="mole", model="default", load_kwargs={"device": "cpu"}
+    )
+    embedding = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+
+    result = manager.predict(
+        "molecules.tsv",
+        embedding,
+        kwargs={"strain": "all"},
+        cwd=tmp_path,
+    )
+
+    assert result == {
+        "output": {
+            "input": "molecules.tsv",
+            "embedding": embedding,
+            "kwargs": {"strain": "all"},
+            "cwd": os.fspath(tmp_path.resolve()),
+        }
+    }
+    assert transport.predict_count == 1
+    assert transport.load_count == 1
+    assert transport.messages[-1] == {
+        MESSAGE_TYPE_KEY: PREDICT_MESSAGE_TYPE,
+        "input": "molecules.tsv",
+        "embedding": embedding,
+        "kwargs": {"strain": "all"},
+        "cwd": os.fspath(tmp_path.resolve()),
+    }
+
+    # A second predict call reuses the already-loaded worker.
+    manager.predict("molecules.tsv", embedding)
+    assert transport.load_count == 1
+    assert transport.predict_count == 2
 
 
 def test_model_error_keeps_loaded_manager_reusable(make_manager):

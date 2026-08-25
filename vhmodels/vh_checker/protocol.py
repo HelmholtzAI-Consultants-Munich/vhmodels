@@ -10,9 +10,9 @@ import time
 # contract cannot drift.
 #
 # The initial load carries project/model/load kwargs, while each subsequent
-# embed carries arbitrary JSON input, keyword arguments, and may carry cwd. The
-# worker replies with {"ok": true, "result": ...} or
-# {"ok": false, "error": ...}.
+# embed or predict carries arbitrary JSON input, keyword arguments, and may
+# carry cwd (predict also carries the embedding to predict from). The worker
+# replies with {"ok": true, "result": ...} or {"ok": false, "error": ...}.
 #
 # Child -> parent response schema:
 # RESULT_MARKER + json.dumps(<model result dict>) + RESULT_MARKER + "\n"
@@ -25,6 +25,7 @@ RESULT_MARKER = "===VHMODELS_RESULT==="
 MESSAGE_TYPE_KEY = "type"
 LOAD_MESSAGE_TYPE = "load"
 EMBED_MESSAGE_TYPE = "embed"
+PREDICT_MESSAGE_TYPE = "predict"
 
 
 def encode_message(message):

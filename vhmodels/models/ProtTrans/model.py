@@ -184,7 +184,7 @@ class ProtTrans(BaseModel):
         return {"output": features[0]}
 
     def predict(self, input, **kwargs):
-        pass
+        raise NotImplementedError("ProtTrans does not support predict().")
 
     def generate(self, input, **kwargs):
         pass

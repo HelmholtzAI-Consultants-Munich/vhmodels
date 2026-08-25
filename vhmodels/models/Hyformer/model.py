@@ -117,7 +117,7 @@ class Hyformer(BaseModel):
         return {"output": embeddings.tolist()}
 
     def predict(self, input, **kwargs):
-        pass
+        raise NotImplementedError("Hyformer does not support predict().")
 
     def generate(self, input, **kwargs):
         pass

@@ -1,4 +1,4 @@
-setuptools
+setuptools<81  # xgboost==1.6.2 imports pkg_resources, removed in newer setuptools
 pydantic
 rdkit==2022.3.3
 torch==2.9.1+cu126

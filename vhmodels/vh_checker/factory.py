@@ -109,7 +109,7 @@ class ModelProxy:
                 timeout=timeout,
             )
 
-    def embed(self, input, **kwargs):
+    def _ensure_backend_available(self):
         if not self._process_manager.is_started:
             if self.runtime == "conda" and not self.backend.is_runtime_available():
                 raise RuntimeError(
@@ -137,8 +137,21 @@ class ModelProxy:
                     "The Apptainer executable is not available. Install Apptainer "
                     "and ensure 'apptainer' is in PATH."
                 )
+
+    def embed(self, input, **kwargs):
+        self._ensure_backend_available()
         raw_result = self._process_manager.embed(
             input=input,
+            kwargs=kwargs,
+            cwd=Path.cwd(),
+        )
+        return _unwrap_model_result(raw_result)
+
+    def predict(self, input, embedding, **kwargs):
+        self._ensure_backend_available()
+        raw_result = self._process_manager.predict(
+            input=input,
+            embedding=embedding,
             kwargs=kwargs,
             cwd=Path.cwd(),
         )

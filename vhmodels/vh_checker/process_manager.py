@@ -14,6 +14,7 @@ from vhmodels.vh_checker.protocol import (
     EMBED_MESSAGE_TYPE,
     LOAD_MESSAGE_TYPE,
     MESSAGE_TYPE_KEY,
+    PREDICT_MESSAGE_TYPE,
 )
 from vhmodels.vh_checker.transports import (
     ApptainerWorkerTransport,
@@ -157,23 +158,22 @@ class ModelProcessManager:
                 raise translated from error
             raise
         self._started = True
+        variant = f" ({self.model})" if self.model is not None else ""
         # TODO: move somehow to worker-side logging
-        _log("REGISTRY", f"Model manifest '{self.project}' ({self.model}) resolved")
-        _log(
-            "RESOURCES", f"Local resources resolved for '{self.project}' ({self.model})"
-        )
-        _log("MODEL WORKER", f"Model '{self.project}' ({self.model}) fully loaded")
+        _log("REGISTRY", f"Model manifest '{self.project}'{variant} resolved")
+        _log("RESOURCES", f"Local resources resolved for '{self.project}'{variant}")
+        _log("MODEL WORKER", f"Model '{self.project}'{variant} fully loaded")
 
-    def embed(self, input, kwargs=None, cwd=None):
+    def _dispatch(self, message_type, log_verb, kwargs, cwd, **extra_fields):
         """Send one request, starting and loading the worker if necessary."""
         self._check_process()
         if cwd is not None:
             self.transport.validate_request_cwd(cwd)
         message = {
-            MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE,
-            "input": input,
+            MESSAGE_TYPE_KEY: message_type,
             "kwargs": kwargs or {},
             "cwd": os.fspath(Path(cwd).resolve()) if cwd is not None else None,
+            **extra_fields,
         }
         # Fail on non-JSON data before starting or invalidating a healthy model.
         json.dumps(message, ensure_ascii=False)
@@ -186,7 +186,7 @@ class ModelProcessManager:
                     "Call close() again before reusing this model."
                 )
             self._start_locked()
-            _log("MODEL", f"Starting '{self.project}' embedding...")
+            _log("MODEL", f"Starting '{self.project}' {log_verb}...")
             try:
                 return self._request_locked(message)
             except ModelWorkerError:
@@ -197,6 +197,25 @@ class ModelProcessManager:
                 self._started = False
                 self._stop_locked(suppress_errors=True)
                 raise
+
+    def embed(self, input, kwargs=None, cwd=None):
+        return self._dispatch(
+            EMBED_MESSAGE_TYPE, 
+            "embedding", 
+            kwargs, 
+            cwd, 
+            input=input
+        )
+
+    def predict(self, input, embedding, kwargs=None, cwd=None):
+        return self._dispatch(
+            PREDICT_MESSAGE_TYPE,
+            "prediction",
+            kwargs,
+            cwd,
+            input=input,
+            embedding=embedding,
+        )
 
     def _stop_locked(self, suppress_errors):
         if not self._worker_may_exist:
