@@ -1,6 +1,7 @@
 from vhmodels.vh_checker.base import BaseModel
 from vhmodels.models.registry import REGISTRY
 from vhmodels.models.source_resolver import SourceResolver
+from vhmodels.utils.device import resolve_torch_device
 
 from transformers import T5EncoderModel, T5Tokenizer
 from transformers import AlbertModel, AlbertTokenizer
@@ -78,9 +79,7 @@ class ProtTrans(BaseModel):
         -------
         None
         """
-        self.device = torch.device(
-            kwargs.get("device", "cuda" if torch.cuda.is_available() else "cpu")
-        )
+        self.device = resolve_torch_device(torch, kwargs.get("device", "auto"))
 
         if model not in self.model_specs:
             raise ValueError(

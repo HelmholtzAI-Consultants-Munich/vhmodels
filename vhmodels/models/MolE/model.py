@@ -1,6 +1,7 @@
 from vhmodels.vh_checker.base import BaseModel
 from vhmodels.models.registry import REGISTRY
 from vhmodels.models.source_resolver import SourceResolver
+from vhmodels.utils.device import resolve_torch_device
 
 import pickle
 
@@ -41,9 +42,7 @@ class MolE(BaseModel):
         manifest = REGISTRY.resolve(self.PROJECT, model or "default")
         resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
 
-        self.device = (
-            "cuda:0" if self.device == "auto" and torch.cuda.is_available() else "cpu"
-        )
+        self.device = resolve_torch_device(torch, kwargs.get("device", "auto"))
 
         weights = resources["weights"].files
         cfg = yaml.safe_load(open(weights["config"]))

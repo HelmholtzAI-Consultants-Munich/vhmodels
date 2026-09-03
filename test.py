@@ -14,10 +14,14 @@
 # result = model.embed(input='example_data/DinoBloom/001.bmp')
 # print(result)
 
+import os
 import vhmodels
 
 with vhmodels.load_model(
-    project="mole", runtime="apptainer"
+    project="mole",
+    runtime="apptainer",
+    image_path=os.environ["VHMODELS_IMAGE_PATH"],
+    device=os.environ.get("VHMODELS_DEVICE", "auto"),
 ) as model:
     embedding = model.embed(input="example_data/MolE/sequences.smiles")
     prediction = model.predict(
