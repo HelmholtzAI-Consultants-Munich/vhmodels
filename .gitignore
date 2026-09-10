@@ -3,3 +3,4 @@ vhmodels.egg-info/
 apptainer_1.3.2_amd64.deb
 .vscode/
 *.sif
+.DS_Store

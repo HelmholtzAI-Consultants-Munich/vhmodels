@@ -25,7 +25,7 @@ from vhmodels.models.source_resolver import SourceResolver
 
 _SOURCE_ADAPTER = TypeAdapter(Source)
 
-_REAL_MODELS = ["dinobloom", "hyformer", "mole", "prottrans"]
+_REAL_MODELS = ["dinobloom", "hyformer", "mole", "nicheformer", "prottrans"]
 
 
 # --- schema: discriminated union + strictness -------------------------------
@@ -111,6 +111,10 @@ def test_discover_finds_real_models():
 
 def test_find_class_path_for_real_models():
     assert discovery.find_class_path("mole") == "MolE.model.MolE"
+    assert (
+        discovery.find_class_path("nicheformer")
+        == "Nicheformer.model.Nicheformer"
+    )
 
 
 def test_find_class_path_unknown_project_raises():
@@ -157,6 +161,7 @@ def test_has_model_and_unknown_project_raises():
 def test_list_variants_matches_manifests_directory():
     assert REGISTRY.list_variants("dinobloom") == ["b", "g", "l", "s"]
     assert REGISTRY.list_variants("mole") == ["default"]
+    assert REGISTRY.list_variants("nicheformer") == ["default"]
     assert len(REGISTRY.list_variants("prottrans")) == 10
 
 

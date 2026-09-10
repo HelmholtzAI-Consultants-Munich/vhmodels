@@ -163,6 +163,7 @@ def test_create_apptainer_image_renders_and_builds_definition(
             "requirements-exclude.linux-x86_64.txt",
         ),
         ("mole", "MolE", "3.10", "cu126", None),
+        ("nicheformer", "Nicheformer", "3.10", "cu126", None),
         ("prottrans", "ProtTrans", "3.11", None, None),
     ],
 )
