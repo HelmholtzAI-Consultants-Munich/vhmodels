@@ -16,18 +16,25 @@
 
 import os
 import vhmodels
+from pathlib import Path
 
 with vhmodels.load_model(
-    project="mole",
+    project="nicheformer",
     runtime="apptainer",
-    image_path=os.environ["VHMODELS_IMAGE_PATH"],
     device=os.environ.get("VHMODELS_DEVICE", "auto"),
 ) as model:
-    embedding = model.embed(input="example_data/MolE/sequences.smiles")
-    prediction = model.predict(
-        input="example_data/MolE/examples_molecules.tsv",
-        embedding=embedding,
+    embedding = model.embed(
+        input={
+            "technology_mean": "example_data/Nicheformer/xenium_mean_script.npy",
+            "data": "example_data/Nicheformer/preprocessed/Xenium_Preview_Human_Non_diseased_Lung_With_Add_on_FFPE_outs_sample-1000.h5ad",
+        },
+        batch_size=4,
+        max_cells=4
     )
 
-print(f"Embedding: \n {embedding} \n\n")
-print(f"Prediction: \n{prediction}")
+output_path = Path("output/nicheformer_embeddings.txt")
+
+with output_path.open("w", encoding="utf-8") as output_file:
+    for index, embedding in enumerate(embedding, start=1):
+        output_file.write(f"embedding{index}:\n\n{embedding}\n\n")
+print(f"Wrote embeddings to {output_path}.")
