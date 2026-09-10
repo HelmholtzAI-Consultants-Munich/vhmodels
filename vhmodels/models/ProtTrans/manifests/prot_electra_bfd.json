@@ -1,0 +1,13 @@
+{
+  "variant": "prot_electra_bfd",
+  "sources": {
+    "tokenizer": {
+      "type": "huggingface",
+      "repo_id": "virtual-human-chc/prot_electra_generator_bfd"
+    },
+    "weights": {
+      "type": "huggingface",
+      "repo_id": "virtual-human-chc/prot_electra_discriminator_bfd"
+    }
+  }
+}

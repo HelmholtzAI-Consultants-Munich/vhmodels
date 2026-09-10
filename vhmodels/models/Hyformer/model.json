@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "model": {
+    "id": "hyformer",
+    "version": "1.0.0",
+    "description": "A joint transformer-based model that unifies a generative decoder with a predictive encoder",
+    "homepage": "https://huggingface.co/collections/virtual-human-chc/hyformer"
+  },
+  "implementation": {
+    "class_path": "Hyformer.model.Hyformer",
+    "capabilities": ["embed"]
+  },
+  "supported_platforms": ["linux-x86_64"],
+  "runtimes": {
+    "conda": {
+      "env_name": "vhmodels-hyformer",
+      "platforms": {
+        "linux-x86_64": { "environment": "environment.linux-x86_64.yml" }
+      }
+    },
+    "apptainer": {
+      "platform": "linux-x86_64",
+      "python": "3.9",
+      "requirements": "requirements.linux-x86_64.txt",
+      "exclude": "requirements-exclude.linux-x86_64.txt",
+      "torch_backend": "cu118"
+    }
+  },
+  "sources": {
+    "weights": {
+      "type": "huggingface",
+      "repo_id": "virtual-human-chc/{variant}",
+      "files": {
+        "vocab": "vocab.txt",
+        "tokenizer_config": "tokenizer_config.json",
+        "model_config": "model_config.json",
+        "checkpoint": "ckpt.pt"
+      }
+    }
+  }
+}

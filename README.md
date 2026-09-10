@@ -4,37 +4,96 @@ This repository contains the vhmodels package. Its goal is to unify access to mu
 
 ## Core concept
 
-Each model lives in its own directory, has its own Conda environment (with Apptainer/Singularity support planned), and is executed by the `vhmodels` package via a subprocess.
+Each model lives in its own directory with its implementation, metadata, and
+runtime dependencies. `vhmodels` executes it in either a per-model Conda
+environment or an Apptainer container. Apptainer images use Ubuntu 24.04 and a
+uv-managed Python environment at `/opt/venv`.
+
+Metadata and resource locations are declared in `model.json` +
+`manifests/<variant>.json`, validated against a Pydantic schema and resolved
+by `vhmodels.models.registry.Registry`; see [docs/manifest.md](docs/manifest.md).
 
 ## Installation
 
-```
+```bash
 git clone https://github.com/HelmholtzAI-Consultants-Munich/vhmodels.git
 cd vhmodels
 pip install -e ".[cli]"
 ```
 
-You also need to have conda installed. We strongly recommend [miniforge](https://conda-forge.org/download/).
+For Conda execution, install [Miniforge](https://conda-forge.org/download/). For
+Apptainer execution, install Apptainer on Linux/HPC or Lima on macOS
+(`brew install lima`); `vhmodels` manages the Lima VM automatically. You do not
+need to install uv on the host.
 
-## CLI Usage
-### List available models:
-```
+## CLI usage
+
+### List available models
+
+```bash
 vh-checker list
 ```
 
-### Create `conda` environment:
-```
+### Create a Conda environment
+
+```bash
 vh-checker create-env <model_name>
 ```
 
 Example:
-```
+
+```bash
 vh-checker create-env dinobloom
 ```
 
+### Create an Apptainer image
+
+```bash
+vh-checker create-apptainer-image <model_name>
+```
+
+By default this creates `vhmodels-<model_name>.sif` in the current directory. Run a model from that image with e.g.:
+
+```python
+import vhmodels
+
+model = vhmodels.load_model(
+    project="dinobloom", model="s", runtime="apptainer"
+)
+```
+
+Pass `image_path="/path/to/image.sif"` to `load_model` when the image is stored
+elsewhere. The CLI equivalent is
+`vh-checker run ... --runtime apptainer --image-path /path/to/image.sif`.
+Set `APPTAINER_NV=1` when running directly on an NVIDIA Linux/HPC host to expose
+its GPU to the container. The Lima path on macOS is CPU-only.
+
+Both Conda- and Apptainer-backed models start one worker lazily on their first
+`embed()` call. The model is loaded once in that worker and reused by later
+calls on the same model object. Conda uses a local process; Apptainer uses a
+background instance. Call `model.close()` when finished, or use the model as a
+context manager; remaining workers are also stopped when Python exits normally.
+
+Abrupt termination may leave an Apptainer instance behind; inspect with
+`apptainer instance list` and stop it with `apptainer instance stop <name>`.
+Apptainer bind mounts are fixed when the instance starts, so set
+`APPTAINER_BINDPATH` before the first `embed()` when inputs live outside
+Apptainer's default host mounts. Rebuild images created with an older version of
+`vhmodels`, since the persistent worker is installed by the image template.
+
+```python
+with vhmodels.load_model(
+    project="dinobloom", model="s"
+) as model:
+    first = model.embed(input="first.bmp")
+    second = model.embed(input="second.bmp")  # reuses the loaded model
+```
 
 ## Quick start
-Simple examples how the models can be used. To use the models, you should first create the corresponding `conda` environment.
+
+First create the corresponding Conda environment or Apptainer image. The
+examples below use the default Conda runtime; pass `runtime="apptainer"` to use
+an image.
 
 ### DinoBloom
 
@@ -83,31 +142,58 @@ results = model.embed(input='example_data/MolE/sequences.smiles')
 print(results)
 ```
 
+### Nicheformer
+
+```python
+import vhmodels
+
+model = vhmodels.load_model(project='nicheformer')
+# Keep this example run small; omit max_cells to embed the full dataset.
+results = model.embed(input={
+    'technology_mean': 'example_data/Nicheformer/xenium_mean_script.npy',
+    'data': (
+        'example_data/Nicheformer/preprocessed/'
+        'Xenium_Preview_Human_Non_diseased_Lung_With_Add_on_FFPE_outs.h5ad'
+    ),
+}, batch_size=4, max_cells=4)
+print(results)
+```
+
 ## Adding models
 If you want to add your own model to `vhmodels`, please follow our [contribution guideline](model_contribution.md).
 
-## Installing ai skills:
-Use you IDE's customize->add plugin/marketplace or just copy the content of the skills folder in your project under (e.g. for cursor) .cursor/skills/...\
-For more details: 
+## Installing AI skills
+
+Use your IDE's plugin or marketplace interface, or copy the contents of the
+`skills` directory into the corresponding project directory (for example,
+`.cursor/skills/` for Cursor).
+
+For more details:
+
 - [claude code](https://code.claude.com/docs/en/skills)
 - [cursor](https://cursor.com/docs/skills)
 - [codex](https://developers.openai.com/codex/skills)
 
 ## Folder structure
-```
-virtual_human_chc
-├───example_data # Example inputs/outputs (also available on HuggingFace)
+
+```text
+vhmodels
+├───example_data # Example inputs/outputs (also available on Hugging Face)
 │   ├───DinoBloom
 │   └───MolE
 ├───notebooks # Example notebooks demonstrating usage
 ├───tests # Tests for core model functionality
 └───vhmodels
-    ├───envs # Templates for Apptainer/Singularity environments
-    ├───models # Model implementations + environments + metadata
-    │   ├───DinoBloom
+    ├───envs # Template for Apptainer environments
+    ├───models # Implementations + Conda/uv dependencies + manifests
+    │   ├───DinoBloom # model.json, manifests/<variant>.json, model.py, ...
     │   ├───Hyformer
     │   ├───MolE
-    │   └───ProtTrans
+    │   ├───ProtTrans
+    │   ├───registry.py # Registry: discovers + resolves manifests
+    │   ├───schema.py # Pydantic manifest schema
+    │   ├───source_resolver.py # turns manifest sources into local paths
+    │   └───discovery.py # dependency-free class_path lookup for workers
     ├───utils # Utility functions
     └───vh_checker # CLI + base model interface
 ```

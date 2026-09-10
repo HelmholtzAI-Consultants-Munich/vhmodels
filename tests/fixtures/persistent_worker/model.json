@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "model": {
+    "id": "persistent-fake",
+    "version": "1.0.0",
+    "description": "Dependency-free persistent worker integration fixture"
+  },
+  "implementation": {
+    "class_path": "PersistentFake.model.PersistentFake"
+  },
+  "supported_platforms": ["linux-x86_64", "macos-arm64"],
+  "runtimes": {}
+}

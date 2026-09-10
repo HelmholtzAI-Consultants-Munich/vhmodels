@@ -20,4 +20,4 @@ dependencies:
     - deepchem==2.8.0
     - guacamol
     - fcd==1.2
-    - git+https://github.com/HelmholtzAI-Consultants-Munich/virtual_human_Hyformer.git@main#subdirectory=hyformer
+    - git+https://github.com/HelmholtzAI-Consultants-Munich/virtual_human_Hyformer.git@8f76a18efa28a3647b6e78283ef1d0bdf3250419#subdirectory=hyformer

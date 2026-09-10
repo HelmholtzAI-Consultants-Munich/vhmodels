@@ -1,0 +1,3 @@
+# GuacaMol declares the obsolete rdkit-pypi distribution. Exclude it because
+# the model uses the maintained rdkit package pinned in the main requirements.
+rdkit-pypi
