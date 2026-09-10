@@ -142,6 +142,23 @@ results = model.embed(input='example_data/MolE/sequences.smiles')
 print(results)
 ```
 
+### Nicheformer
+
+```python
+import vhmodels
+
+model = vhmodels.load_model(project='nicheformer')
+# Keep this example run small; omit max_cells to embed the full dataset.
+results = model.embed(input={
+    'technology_mean': 'example_data/Nicheformer/xenium_mean_script.npy',
+    'data': (
+        'example_data/Nicheformer/preprocessed/'
+        'Xenium_Preview_Human_Non_diseased_Lung_With_Add_on_FFPE_outs.h5ad'
+    ),
+}, batch_size=4, max_cells=4)
+print(results)
+```
+
 ## Adding models
 If you want to add your own model to `vhmodels`, please follow our [contribution guideline](model_contribution.md).
 
