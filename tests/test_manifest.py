@@ -166,7 +166,7 @@ def test_list_variants_matches_manifests_directory():
     assert REGISTRY.list_variants("dinobloom") == ["b", "g", "l", "s"]
     assert REGISTRY.list_variants("mole") == ["default"]
     assert REGISTRY.list_variants("nicheformer") == ["default"]
-    assert len(REGISTRY.list_variants("prottrans")) == 10
+    assert len(REGISTRY.list_variants("prottrans")) == 12
 
 
 def test_resolve_requires_variant_when_ambiguous():
@@ -192,6 +192,15 @@ def test_resolve_substitutes_variant_placeholder_in_nested_fields():
     resolved = REGISTRY.resolve("prottrans", "prot_bert")
     assert resolved.sources["tokenizer"].repo_id == "virtual-human-chc/prot_bert"
     assert resolved.sources["weights"].repo_id == "virtual-human-chc/prot_bert"
+
+    for variant in ("prot_bert_bfd_ss3", "prot_t5_xxl_bfd"):
+        resolved = REGISTRY.resolve("prottrans", variant)
+        assert resolved.sources["tokenizer"].repo_id == (
+            f"virtual-human-chc/{variant}"
+        )
+        assert resolved.sources["weights"].repo_id == (
+            f"virtual-human-chc/{variant}"
+        )
 
 
 def test_resolve_variant_manifest_overrides_model_level_source():
