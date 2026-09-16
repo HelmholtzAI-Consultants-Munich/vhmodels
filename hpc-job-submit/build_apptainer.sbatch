@@ -83,6 +83,7 @@ mkdir -p "${IMAGE_DIR}" \
 # Keep every temporary build artifact under one unique job directory.
 SCRATCH_DIR="$(mktemp -d "${SCRATCH_PARENT}/vhmodels-${MODEL}.${SLURM_JOB_ID}.XXXXXX")"
 export APPTAINER_TMPDIR="${SCRATCH_DIR}/apptainer-tmp"
+export PROOT_TMP_DIR="${SCRATCH_DIR}/proot-tmp"
 BUILD_CONTEXT="${SCRATCH_DIR}/build-context"
 
 cleanup() {
@@ -91,7 +92,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "${APPTAINER_TMPDIR}" "${BUILD_CONTEXT}"
+mkdir -p "${APPTAINER_TMPDIR}" "${PROOT_TMP_DIR}" "${BUILD_CONTEXT}"
 
 cp -a "${PROJECT_ROOT}/vhmodels" "${BUILD_CONTEXT}/vhmodels"
 sed \

@@ -33,11 +33,15 @@ class ProtTrans(BaseModel):
     )
 
     def __init__(self):
+        # This adapter exposes embeddings. For the SS3 checkpoint, BertModel
+        # loads the fine-tuned BERT backbone without the classification head.
         self.model_specs = {
             "prot_t5_xl_uniref50": (T5Tokenizer, T5EncoderModel),
             "prot_t5_xxl_uniref50": (T5Tokenizer, T5EncoderModel),
             "prot_t5_xl_bfd": (T5Tokenizer, T5EncoderModel),
+            "prot_t5_xxl_bfd": (T5Tokenizer, T5EncoderModel),
             "prot_bert_bfd": (BertTokenizer, BertModel),
+            "prot_bert_bfd_ss3": (BertTokenizer, BertModel),
             "prot_bert": (BertTokenizer, BertModel),
             "prot_albert": (AlbertTokenizer, AlbertModel),
             "prot_xlnet": (XLNetTokenizer, XLNetModel),
@@ -54,7 +58,9 @@ class ProtTrans(BaseModel):
     def load_model(self, model=None, **kwargs):
         """
         Downloads and loads the artifacts for the specified model in the ProtTrans HF repository. Possible options are:
+        - prot_bert
         - prot_bert_bfd
+        - prot_bert_bfd_ss3
         - prot_t5_xl_uniref50
         - prot_t5_xxl_bfd
         - prot_t5_xxl_uniref50

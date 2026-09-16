@@ -16,25 +16,20 @@
 
 import os
 import vhmodels
-from pathlib import Path
+
+project="prottrans"
 
 with vhmodels.load_model(
-    project="nicheformer",
+    project=project,
+    model="prot_bert_bfd_ss3",
     runtime="apptainer",
+    image_path=os.environ.get("VHMODELS_IMAGE_PATH", f"vhmodels-{project}"),
     device=os.environ.get("VHMODELS_DEVICE", "auto"),
 ) as model:
     embedding = model.embed(
-        input={
-            "technology_mean": "example_data/Nicheformer/xenium_mean_script.npy",
-            "data": "example_data/Nicheformer/preprocessed/Xenium_Preview_Human_Non_diseased_Lung_With_Add_on_FFPE_outs_sample-1000.h5ad",
-        },
-        batch_size=4,
-        max_cells=4
+        input=[
+            "PRTEINO", "SEQWENCE"
+        ]
     )
 
-output_path = Path("output/nicheformer_embeddings.txt")
-
-with output_path.open("w", encoding="utf-8") as output_file:
-    for index, embedding in enumerate(embedding, start=1):
-        output_file.write(f"embedding{index}:\n\n{embedding}\n\n")
-print(f"Wrote embeddings to {output_path}.")
+print("\nEmbedding:\n\n", embedding)
