@@ -1,15 +1,15 @@
 #!/bin/bash
 #SBATCH --job-name=inference_gpu
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=128G
 #SBATCH --acctg-freq=task=1
 #SBATCH --time=1:00:00
 #SBATCH --output=./output/inference_gpu_job_output.txt
 #SBATCH --error=./output/inference_gpu_job_error.txt
 #SBATCH --nice=10000
 #SBATCH --gres=gpu:1
-#SBATCH --partition=gpu_p
+#SBATCH --partition=gpu_p --constraint=a100_80gb
 #SBATCH --qos=gpu_normal
 
 set -euo pipefail
