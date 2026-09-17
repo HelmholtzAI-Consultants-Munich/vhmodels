@@ -207,7 +207,7 @@ class ModelProcessManager:
             input=input
         )
 
-    def predict(self, input, embedding, kwargs=None, cwd=None):
+    def predict(self, input, embedding=None, kwargs=None, cwd=None):
         return self._dispatch(
             PREDICT_MESSAGE_TYPE,
             "prediction",

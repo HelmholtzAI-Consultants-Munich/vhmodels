@@ -147,7 +147,7 @@ class ModelProxy:
         )
         return _unwrap_model_result(raw_result)
 
-    def predict(self, input, embedding, **kwargs):
+    def predict(self, input, embedding=None, **kwargs):
         self._ensure_backend_available()
         raw_result = self._process_manager.predict(
             input=input,
