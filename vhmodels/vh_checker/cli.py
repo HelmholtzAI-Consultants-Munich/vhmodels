@@ -378,8 +378,8 @@ def run(model_id, data_json, runtime, image_path):
         with load_model(model_id, runtime=runtime, image_path=image_path) as model:
             result = model.embed(data)
         click.echo(json.dumps(result, indent=2))
-    except Exception as e:
-        click.echo(f"Error: {str(e)}")
+    except Exception as error:
+        raise click.ClickException(str(error)) from error
 
 
 if __name__ == "__main__":

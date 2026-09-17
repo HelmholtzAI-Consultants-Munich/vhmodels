@@ -7,7 +7,10 @@ SourceResolver -> local resources.
 
 import subprocess
 import sys
+import tempfile
 import types
+import urllib.request
+from pathlib import Path
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -305,6 +308,104 @@ def test_resolve_local_source_missing_raises(tmp_path):
     source = _SOURCE_ADAPTER.validate_python({"type": "local", "path": "missing.bin"})
     with pytest.raises(FileNotFoundError):
         SourceResolver().resolve({"weights": source}, model_dir=tmp_path)
+
+
+def test_resolve_url_retries_after_interrupted_download(monkeypatch, tmp_path):
+    source = _SOURCE_ADAPTER.validate_python(
+        {
+            "type": "url",
+            "url": "https://example.test/weights.bin",
+        }
+    )
+    attempts = []
+
+    def download(url, path):
+        attempts.append(path)
+        path.write_bytes(b"partial")
+        if len(attempts) == 1:
+            raise OSError("download interrupted")
+        path.write_bytes(b"complete")
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(urllib.request, "urlretrieve", download)
+
+    with pytest.raises(OSError, match="download interrupted"):
+        SourceResolver()._resolve_url(source)
+
+    destination = tmp_path / "vhmodels-sources" / "weights.bin"
+    assert not destination.exists()
+
+    resolved = SourceResolver()._resolve_url(source)
+
+    assert resolved.path == destination
+    assert destination.read_bytes() == b"complete"
+    assert len(attempts) == 2
+    assert all(path != destination for path in attempts)
+
+
+def test_resolve_git_checks_out_revision_in_existing_clone(monkeypatch, tmp_path):
+    source = _SOURCE_ADAPTER.validate_python(
+        {
+            "type": "git",
+            "url": "https://example.test/repository.git",
+            "revision": "new-revision",
+        }
+    )
+    destination = tmp_path / "vhmodels-sources" / "repository"
+    destination.mkdir(parents=True)
+    commands = []
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, check: commands.append(command),
+    )
+
+    resolved = SourceResolver()._resolve_git(source)
+
+    assert resolved.path == destination
+    assert commands == [
+        ["git", "-C", str(destination), "checkout", "new-revision"]
+    ]
+
+
+def test_resolve_git_does_not_cache_failed_checkout(monkeypatch, tmp_path):
+    source = _SOURCE_ADAPTER.validate_python(
+        {
+            "type": "git",
+            "url": "https://example.test/repository.git",
+            "revision": "requested-revision",
+        }
+    )
+    checkout_attempts = 0
+    clone_attempts = 0
+
+    def run(command, check):
+        nonlocal checkout_attempts, clone_attempts
+        if command[1] == "clone":
+            clone_attempts += 1
+            (Path(command[-1]) / ".git").mkdir()
+            return
+        checkout_attempts += 1
+        if checkout_attempts == 1:
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        SourceResolver()._resolve_git(source)
+
+    destination = tmp_path / "vhmodels-sources" / "repository"
+    assert not destination.exists()
+
+    resolved = SourceResolver()._resolve_git(source)
+
+    assert resolved.path == destination
+    assert destination.is_dir()
+    assert clone_attempts == 2
+    assert checkout_attempts == 2
 
 
 def test_resolve_mole_sources_end_to_end(fake_huggingface_hub, monkeypatch):

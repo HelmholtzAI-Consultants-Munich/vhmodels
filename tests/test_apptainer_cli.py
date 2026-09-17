@@ -401,3 +401,25 @@ def test_run_cli_forwards_apptainer_runtime_and_image(monkeypatch, tmp_path):
         "closed": True,
     }
     assert "[\n  1,\n  2,\n  3\n]" in result.output
+
+
+def test_run_cli_returns_nonzero_when_model_fails(monkeypatch):
+    class FailingModel:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            pass
+
+        def embed(self, data):
+            raise RuntimeError("The Apptainer image does not exist.")
+
+    monkeypatch.setattr(factory, "load_model", lambda *args, **kwargs: FailingModel())
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["run", "nicheformer", "{}", "--runtime", "apptainer"],
+    )
+
+    assert result.exit_code == 1
+    assert "Error: The Apptainer image does not exist." in result.output

@@ -30,9 +30,8 @@ class BaseModel(ABC):
             module_path, class_name = class_path.rsplit(".", 1)
             module = importlib.import_module(module_path)
             return getattr(module, class_name)
-        except (ImportError, AttributeError) as e:
-            print(f"Error loading class {class_path}: {e}", file=sys.stderr)
-            sys.exit(1)
+        except (ImportError, AttributeError) as error:
+            raise ImportError(f"Error loading class {class_path}: {error}") from error
 
     @abstractmethod
     def load_model(self, model, **kwargs):

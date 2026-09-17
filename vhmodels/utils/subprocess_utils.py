@@ -7,6 +7,9 @@ import subprocess
 
 def terminate_process_group(process):
     """Terminate and reap a subprocess together with all of its descendants."""
+    if process.returncode is not None:
+        return
+
     try:
         process_group = os.getpgid(process.pid)
     except ProcessLookupError:

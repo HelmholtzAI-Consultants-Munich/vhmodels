@@ -112,24 +112,44 @@ class SourceResolver:
 
     def _resolve_url(self, source):
         import hashlib
+        import os
         import tempfile
         import urllib.request
 
         filename = source.filename or source.url.rsplit("/", 1)[-1]
         destination = Path(tempfile.gettempdir()) / "vhmodels-sources" / filename
         destination.parent.mkdir(parents=True, exist_ok=True)
-        if not destination.exists():
-            urllib.request.urlretrieve(source.url, destination)
-        if source.sha256:
-            digest = hashlib.sha256(destination.read_bytes()).hexdigest()
+
+        def validate_checksum(path):
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
             if digest != source.sha256:
                 raise ValueError(
                     f"Checksum mismatch for '{source.url}': "
                     f"expected {source.sha256}, got {digest}."
                 )
+
+        if not destination.exists():
+            with tempfile.NamedTemporaryFile(
+                dir=destination.parent,
+                prefix=f".{destination.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+            try:
+                urllib.request.urlretrieve(source.url, temporary_path)
+                if source.sha256:
+                    validate_checksum(temporary_path)
+                os.replace(temporary_path, destination)
+            finally:
+                temporary_path.unlink(missing_ok=True)
+        elif source.sha256:
+            validate_checksum(destination)
         return ResolvedURL(destination, source.sha256)
 
     def _resolve_git(self, source):
+        import os
+        import shutil
         import subprocess
         import tempfile
 
@@ -138,14 +158,37 @@ class SourceResolver:
             / "vhmodels-sources"
             / (source.url.rsplit("/", 1)[-1].removesuffix(".git"))
         )
+        destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():
-            command = ["git", "clone", source.url, str(destination)]
-            subprocess.run(command, check=True)
-            if source.revision:
-                subprocess.run(
-                    ["git", "-C", str(destination), "checkout", source.revision],
-                    check=True,
+            temporary_path = Path(
+                tempfile.mkdtemp(
+                    dir=destination.parent,
+                    prefix=f".{destination.name}.",
                 )
+            )
+            try:
+                subprocess.run(
+                    ["git", "clone", source.url, str(temporary_path)], check=True
+                )
+                if source.revision:
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(temporary_path),
+                            "checkout",
+                            source.revision,
+                        ],
+                        check=True,
+                    )
+                os.replace(temporary_path, destination)
+            finally:
+                shutil.rmtree(temporary_path, ignore_errors=True)
+        elif source.revision:
+            subprocess.run(
+                ["git", "-C", str(destination), "checkout", source.revision],
+                check=True,
+            )
         return ResolvedGit(destination, source.revision)
 
     def _resolve_local(self, source, model_dir):

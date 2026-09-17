@@ -109,7 +109,7 @@ def test_timeout_kills_process_group(monkeypatch):
 
     class FakeProc:
         pid = 4242
-        returncode = -9
+        returncode = None
 
         def communicate(self, input=None, timeout=None):
             if timeout is not None:
@@ -152,6 +152,7 @@ def test_terminate_group_escalates_sigterm_then_sigkill(monkeypatch):
 
     class FakeProc:
         pid = 4242
+        returncode = None
 
         def wait(self, timeout=None):
             calls["wait"] += 1
@@ -171,12 +172,31 @@ def test_terminate_group_escalates_sigterm_then_sigkill(monkeypatch):
     assert sent == [signal.SIGTERM, signal.SIGKILL]
 
 
+def test_terminate_group_skips_already_reaped_process(monkeypatch):
+    class FakeProc:
+        pid = 4242
+        returncode = 0
+
+    monkeypatch.setattr(
+        subprocess_utils.os,
+        "getpgid",
+        lambda pid: pytest.fail("getpgid must not be called for a reaped process"),
+    )
+    monkeypatch.setattr(
+        subprocess_utils.os,
+        "killpg",
+        lambda pgid, sig: pytest.fail("killpg must not be called for a reaped process"),
+    )
+
+    subprocess_utils.terminate_process_group(FakeProc())
+
+
 def test_run_subprocess_interrupt_kills_process_group(monkeypatch):
     sent = []
 
     class FakeProc:
         pid = 4242
-        returncode = -15
+        returncode = None
         calls = 0
 
         def communicate(self, input=None, timeout=None):

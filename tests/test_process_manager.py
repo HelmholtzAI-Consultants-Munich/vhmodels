@@ -327,6 +327,24 @@ def test_model_worker_loads_once_and_handles_arbitrary_requests(monkeypatch, tmp
     assert [call[0] for call in calls].count("load") == 1
 
 
+def test_model_class_import_failure_raises_catchable_error(monkeypatch):
+    monkeypatch.setattr(
+        "vhmodels.vh_checker.base.discovery.find_class_path",
+        lambda project: "Broken.model.BrokenModel",
+    )
+
+    def fail_import(module_path):
+        raise ImportError("missing model dependency")
+
+    monkeypatch.setattr(
+        "vhmodels.vh_checker.base.importlib.import_module",
+        fail_import,
+    )
+
+    with pytest.raises(ImportError, match="missing model dependency"):
+        worker.BaseModel.get_class("broken")
+
+
 def test_model_worker_remains_loaded_after_model_error(monkeypatch):
     calls = {"load": 0, "embed": 0}
 
