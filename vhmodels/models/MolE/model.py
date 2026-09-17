@@ -25,6 +25,38 @@ class MolE(BaseModel):
         self.screening = None
         self.device = None
 
+    @staticmethod
+    def _read_molecules(input):
+        """Read and validate the named SMILES table used by MolE."""
+        molecules = pd.read_csv(input, sep="\t")
+        required_columns = ["chem_name", "smiles"]
+        missing_columns = set(required_columns).difference(molecules.columns)
+        if missing_columns:
+            raise ValueError(
+                "MolE input is missing required column(s): "
+                + ", ".join(sorted(missing_columns))
+            )
+        if molecules[required_columns].isna().any().any():
+            raise ValueError("MolE input contains a missing chemical name or SMILES.")
+        if molecules["chem_name"].duplicated().any():
+            raise ValueError("MolE input contains duplicate chemical names.")
+
+        valid_molecules = mole_representation.read_smiles_df(
+            input, smile_col="smiles", id_col="chem_name"
+        )
+        if len(valid_molecules) != len(molecules):
+            raise ValueError("MolE input contains an invalid SMILES value.")
+        return valid_molecules
+
+    def _embed_molecules(self, molecules):
+        """Generate embedding vectors for a validated molecule table."""
+        embedding = dataset_representation.batch_representation(
+            smiles_list=molecules["smiles"].tolist(),
+            dl_model=self.model,
+            device=self.device,
+        )
+        return embedding.tolist()
+
     def load_model(self, model=None, **kwargs):
         """
         Downloads and loads the necessary artifacts for the MolE model from HuggingFace.
@@ -63,25 +95,44 @@ class MolE(BaseModel):
 
         Parameters
         ----------
-        inputs : str
-            Path to the raw data file containing molecular representations.
+        input : str
+            Path to a tab-separated file with ``chem_name`` and ``smiles``
+            columns.
 
         Returns
         -------
         dict
-            A dictionary containing:
-            - 'output': list of lists
+            A dictionary whose ``output`` maps each chemical name to its
+            embedding. The default model produces 1000 values per chemical.
         """
-        ## !! Refine the functions in the MolE package, so they don't return
-        smiles = mole_representation.read_smiles(input)
-        emb = dataset_representation.batch_representation(
-            smiles_list=smiles, dl_model=self.model, device=self.device
-        )
-        return {"output": emb.tolist()}
+        molecules = self._read_molecules(input)
+        embedding = self._embed_molecules(molecules)
+        return {
+            "output": dict(zip(molecules["chem_name"].tolist(), embedding))
+        }
 
-    def predict(self, input, embedding, **kwargs):
-        molecules = pd.read_csv(input, sep="\t")
-        emb_df = pd.DataFrame(embedding, index=molecules["chem_name"].tolist())
+    def predict(self, input, embedding=None, **kwargs):
+        """Predict antimicrobial activity for the chemicals in ``input``.
+
+        When ``embedding`` is omitted, it is generated from ``input``. A
+        supplied embedding must contain the same chemical names in the same
+        order as the input table.
+        """
+        molecules = self._read_molecules(input)
+        chem_names = molecules["chem_name"].tolist()
+        if embedding is None:
+            emb_df = pd.DataFrame(
+                self._embed_molecules(molecules), index=chem_names
+            )
+        else:
+            if not isinstance(embedding, dict):
+                raise ValueError("MolE embedding must map chemical names to vectors.")
+            if list(embedding) != chem_names:
+                raise ValueError(
+                    "MolE embedding chemical names and order must match the input."
+                )
+            emb_df = pd.DataFrame.from_dict(embedding, orient="index")
+
         X = mole_antimicrobial_prediction.add_strains(emb_df, self.screening)
         probs = self.xgb.predict_proba(X)[:, 1]
         return {"output": pd.Series(probs, index=X.index).to_dict()}
@@ -93,6 +144,5 @@ class MolE(BaseModel):
 if __name__ == "__main__":
     model = MolE()
     model.load_model()
-    embedding = model.embed("example_data/MolE/sequences.smiles")["output"]
-    result = model.predict("example_data/MolE/examples_molecules.tsv", embedding)
+    result = model.predict("example_data/MolE/examples_molecules.tsv")
     print(result)

@@ -154,9 +154,16 @@ print(results)
 import vhmodels
 
 model = vhmodels.load_model(project='mole')
-results = model.embed(input='example_data/MolE/sequences.smiles')
+input_path = 'example_data/MolE/examples_molecules.tsv'
+results = model.predict(input=input_path)
 print(results)
 ```
+
+`predict()` creates the embeddings from the two-column input table by default.
+To reuse a precomputed embedding, call `model.embed(input_path)` and pass its
+result to `model.predict(input_path, embedding)`. The embedding maps chemical
+names to vectors, and `predict()` verifies that its names and order match the
+input table.
 
 ### Nicheformer
 
