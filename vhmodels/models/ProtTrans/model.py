@@ -106,7 +106,21 @@ class ProtTrans(BaseModel):
         self.tokenizer = tokenizer_cls.from_pretrained(
             resources["tokenizer"].repo_id, do_lower_case=False
         )
-        self.model = model_cls.from_pretrained(resources["weights"].repo_id)
+
+        model_kwargs = {}
+        if model == "prot_t5_xxl_uniref50":
+            model_kwargs.update(
+                revision="2bd8ac66252842975aead5859c9f8e5d1e706ed2",
+                use_safetensors=True,
+            )
+        elif model == "prot_t5_xxl_bfd":
+            model_kwargs.update(
+                revision="e13d3644de647fb94c6afd12fe09d8c3667e97ee",
+                use_safetensors=True,
+            )
+        self.model = model_cls.from_pretrained(
+            resources["weights"].repo_id, **model_kwargs
+        )
 
         self.model = self.model.to(self.device)
 

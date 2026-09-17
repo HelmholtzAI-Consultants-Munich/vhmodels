@@ -4,5 +4,5 @@
   "UV_CACHE_DIR": "",
   "HF_CACHE_DIR": "",
   "TORCH_CACHE_DIR": "",
-  "MODEL": "nicheformer"
+  "MODEL": "prottrans"
 }

@@ -21,7 +21,7 @@ project="prottrans"
 
 with vhmodels.load_model(
     project=project,
-    model="prot_bert_bfd_ss3",
+    model="prot_t5_xxl_bfd",
     runtime="apptainer",
     image_path=os.environ.get("VHMODELS_IMAGE_PATH", f"vhmodels-{project}"),
     device=os.environ.get("VHMODELS_DEVICE", "auto"),
