@@ -1,16 +1,61 @@
 from vhmodels.vh_checker.base import BaseModel
+from vhmodels.models.registry import REGISTRY
+from vhmodels.models.source_resolver import SourceResolver
+from vhmodels.utils.device import resolve_torch_device
+
+import pickle
+
+import pandas as pd
 import torch
 import yaml
-from huggingface_hub import hf_hub_download
-from mole_package import ginet_concat, mole_representation, dataset_representation
+from mole_package import (
+    dataset_representation,
+    ginet_concat,
+    mole_antimicrobial_prediction,
+    mole_representation,
+)
 
 
 class MolE(BaseModel):
+    PROJECT = "mole"
+
     def __init__(self):
-        self.repo = "virtual-human-chc/MolE"
         self.model = None
         self.xgb = None
+        self.screening = None
         self.device = None
+
+    @staticmethod
+    def _read_molecules(input):
+        """Read and validate the named SMILES table used by MolE."""
+        molecules = pd.read_csv(input, sep="\t")
+        required_columns = ["chem_name", "smiles"]
+        missing_columns = set(required_columns).difference(molecules.columns)
+        if missing_columns:
+            raise ValueError(
+                "MolE input is missing required column(s): "
+                + ", ".join(sorted(missing_columns))
+            )
+        if molecules[required_columns].isna().any().any():
+            raise ValueError("MolE input contains a missing chemical name or SMILES.")
+        if molecules["chem_name"].duplicated().any():
+            raise ValueError("MolE input contains duplicate chemical names.")
+
+        valid_molecules = mole_representation.read_smiles_df(
+            input, smile_col="smiles", id_col="chem_name"
+        )
+        if len(valid_molecules) != len(molecules):
+            raise ValueError("MolE input contains an invalid SMILES value.")
+        return valid_molecules
+
+    def _embed_molecules(self, molecules):
+        """Generate embedding vectors for a validated molecule table."""
+        embedding = dataset_representation.batch_representation(
+            smiles_list=molecules["smiles"].tolist(),
+            dl_model=self.model,
+            device=self.device,
+        )
+        return embedding.tolist()
 
     def load_model(self, model=None, **kwargs):
         """
@@ -26,17 +71,21 @@ class MolE(BaseModel):
         -------
         None
         """
-        self.device = (
-            "cuda:0" if self.device == "auto" and torch.cuda.is_available() else "cpu"
-        )
+        manifest = REGISTRY.resolve(self.PROJECT, model or "default")
+        resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
 
-        cfg = yaml.safe_load(open(hf_hub_download(self.repo, "config.yaml")))
+        self.device = resolve_torch_device(torch, kwargs.get("device", "auto"))
+
+        weights = resources["weights"].files
+        cfg = yaml.safe_load(open(weights["config"]))
         self.model = ginet_concat.GINet(**cfg["model"]).to(self.device)
         self.model.load_state_dict(
-            torch.load(
-                hf_hub_download(self.repo, "model.pth"), map_location=self.device
-            )
+            torch.load(weights["checkpoint"], map_location=self.device)
         )
+
+        xgb = resources["xgb"].files
+        self.xgb = pickle.load(open(xgb["model"], "rb"))
+        self.screening = xgb["screening"]
 
     def embed(self, input, **kwargs):
         """
@@ -46,24 +95,47 @@ class MolE(BaseModel):
 
         Parameters
         ----------
-        inputs : str
-            Path to the raw data file containing molecular representations.
+        input : str
+            Path to a tab-separated file with ``chem_name`` and ``smiles``
+            columns.
 
         Returns
         -------
         dict
-            A dictionary containing:
-            - 'output': list of lists
+            A dictionary whose ``output`` maps each chemical name to its
+            embedding. The default model produces 1000 values per chemical.
         """
-        ## !! Refine the functions in the MolE package, so they don't return
-        smiles = mole_representation.read_smiles(input)
-        emb = dataset_representation.batch_representation(
-            smiles_list=smiles, dl_model=self.model, device=self.device
-        )
-        return {"output": emb.tolist()}
+        molecules = self._read_molecules(input)
+        embedding = self._embed_molecules(molecules)
+        return {
+            "output": dict(zip(molecules["chem_name"].tolist(), embedding))
+        }
 
-    def predict(self, input, **kwargs):
-        pass
+    def predict(self, input, embedding=None, **kwargs):
+        """Predict antimicrobial activity for the chemicals in ``input``.
+
+        When ``embedding`` is omitted, it is generated from ``input``. A
+        supplied embedding must contain the same chemical names in the same
+        order as the input table.
+        """
+        molecules = self._read_molecules(input)
+        chem_names = molecules["chem_name"].tolist()
+        if embedding is None:
+            emb_df = pd.DataFrame(
+                self._embed_molecules(molecules), index=chem_names
+            )
+        else:
+            if not isinstance(embedding, dict):
+                raise ValueError("MolE embedding must map chemical names to vectors.")
+            if list(embedding) != chem_names:
+                raise ValueError(
+                    "MolE embedding chemical names and order must match the input."
+                )
+            emb_df = pd.DataFrame.from_dict(embedding, orient="index")
+
+        X = mole_antimicrobial_prediction.add_strains(emb_df, self.screening)
+        probs = self.xgb.predict_proba(X)[:, 1]
+        return {"output": pd.Series(probs, index=X.index).to_dict()}
 
     def generate(self, input, **kwargs):
         pass
@@ -72,5 +144,5 @@ class MolE(BaseModel):
 if __name__ == "__main__":
     model = MolE()
     model.load_model()
-    result = model.embed("example_data/MolE/sequences.smiles")
+    result = model.predict("example_data/MolE/examples_molecules.tsv")
     print(result)

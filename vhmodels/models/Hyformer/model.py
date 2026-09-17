@@ -1,5 +1,7 @@
 from vhmodels.vh_checker.base import BaseModel
-from vhmodels.utils.paths import get_model_cache_dir
+from vhmodels.models.registry import REGISTRY
+from vhmodels.models.source_resolver import SourceResolver
+from vhmodels.utils.device import resolve_torch_device
 
 from hyformer.models.auto import AutoModel
 from hyformer.utils import set_seed
@@ -9,29 +11,15 @@ from hyformer.configs.model import ModelConfig
 
 import json
 import torch
-from huggingface_hub import hf_hub_download
 
 
 class Hyformer(BaseModel):
+    PROJECT = "hyformer"
+
     def __init__(self):
-        self.model_config = [
-            "hyformer_molecules_50M",
-            "hyformer_peptides_34M",
-            "hyformer_peptides_34_MIC",
-            "hyformer_molecules_8M",
-        ]
         self.model = None
         self.tokenizer = None
         self.device = None
-        self.local = None
-
-    def _download(self, repo_id, filename):
-        return hf_hub_download(
-            repo_id=repo_id,
-            filename=filename,
-            local_dir=str(self.local),
-            local_dir_use_symlinks=False,
-        )
 
     def load_model(self, model=None, seed=1337, **kwargs):
         """
@@ -45,7 +33,6 @@ class Hyformer(BaseModel):
         - vocab.txt: vocabulary of the tokenizer
         - tokenizer_config.json: configuration of the tokenizer
         - model_config.json: configuration of the model
-        - downstream_config.json: configuration for the downstream prediction task
         - ckpt.pt: weights of the model
 
         For more information, check out (link to HF).
@@ -63,23 +50,17 @@ class Hyformer(BaseModel):
         -------
         None
         """
-        if model not in self.model_config:
-            raise ValueError(
-                f"Unknown model '{model}'. Available: {list(self.model_config)}"
-            )
+        manifest = REGISTRY.resolve(self.PROJECT, model)
+        weights = SourceResolver().resolve(manifest.sources, manifest.model_dir)[
+            "weights"
+        ]
 
         set_seed(seed)
 
-        self.device = torch.device(
-            kwargs.get("device", "cuda" if torch.cuda.is_available() else "cpu")
-        )
+        self.device = resolve_torch_device(torch, kwargs.get("device", "auto"))
 
-        # Use ~/.cache/vhmodels/weights/model_name
-        self.local = get_model_cache_dir(model)
-        repo_id = f"virtual-human-chc/{model}"
-
-        vocab_path = self._download(repo_id, "vocab.txt")
-        tok_config_path = self._download(repo_id, "tokenizer_config.json")
+        vocab_path = weights.files["vocab"]
+        tok_config_path = weights.files["tokenizer_config"]
 
         with open(tok_config_path, "r") as f:
             tok_config_data = json.load(f)
@@ -91,14 +72,11 @@ class Hyformer(BaseModel):
             TokenizerConfig.from_dict(tok_config_data)
         )
 
-        model_config_path = self._download(repo_id, "model_config.json")
-
         self.model = AutoModel.from_config(
-            ModelConfig.from_config_file(model_config_path)
+            ModelConfig.from_config_file(weights.files["model_config"])
         )
 
-        ckpt_path = self._download(repo_id, "ckpt.pt")
-        self.model.load_pretrained(ckpt_path)
+        self.model.load_pretrained(weights.files["checkpoint"])
 
         self.model.to(self.device)
         self.model.eval()
@@ -138,7 +116,7 @@ class Hyformer(BaseModel):
         return {"output": embeddings.tolist()}
 
     def predict(self, input, **kwargs):
-        pass
+        raise NotImplementedError("Hyformer does not support predict().")
 
     def generate(self, input, **kwargs):
         pass
