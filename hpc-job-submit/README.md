@@ -1,10 +1,14 @@
 # HPC job submission
 
-These Slurm scripts build an Apptainer image and run `test.py` on an HPC node.
+These Slurm scripts build an Apptainer image and run the repository-level
+`test.py` inference entry point on an HPC node. The included `test.py` example
+is hardwired to Nicheformer, so its configuration uses `MODEL=nicheformer`.
 
 ## Configuration
 
-Edit `hpc-job-submit/config.json` before submitting a job. All directory paths should be absolute, writable, and available on the compute nodes.
+Edit `hpc-job-submit/config.json` before submitting a job. Replace every `null`
+path with an absolute and writable directory available on your cluster. The
+scripts fail immediately if a required value is still `null`.
 
 | Setting | Purpose |
 | --- | --- |
@@ -13,7 +17,7 @@ Edit `hpc-job-submit/config.json` before submitting a job. All directory paths s
 | `UV_CACHE_DIR` | Python package cache used during the build |
 | `HF_CACHE_DIR` | Hugging Face model cache |
 | `TORCH_CACHE_DIR` | PyTorch model cache |
-| `MODEL` | Registered model ID, such as `nicheformer` |
+| `MODEL` | Registered model ID; set to `nicheformer` for the `test.py` example |
 
 ## Scripts
 

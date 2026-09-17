@@ -68,6 +68,22 @@ elsewhere. The CLI equivalent is
 Set `APPTAINER_NV=1` when running directly on an NVIDIA Linux/HPC host to expose
 its GPU to the container. The Lima path on macOS is CPU-only.
 
+### Run the Nicheformer HPC example
+
+The repository-level [`test.py`](test.py) is the inference entry point, used also
+by the Slurm scripts in [`hpc-job-submit`](hpc-job-submit/). This example is
+intentionally configured for Nicheformer, matching the default `MODEL` value in
+`hpc-job-submit/config.json`.
+
+For apptainer, run it from the repository root after building the Nicheformer image:
+
+```bash
+python test.py
+```
+
+See the [HPC job submission guide](hpc-job-submit/README.md)
+for the Slurm workflow.
+
 Both Conda- and Apptainer-backed models start one worker lazily on their first
 `embed()` call. The model is loaded once in that worker and reused by later
 calls on the same model object. Conda uses a local process; Apptainer uses a
@@ -153,7 +169,7 @@ results = model.embed(input={
     'technology_mean': 'example_data/Nicheformer/xenium_mean_script.npy',
     'data': (
         'example_data/Nicheformer/preprocessed/'
-        'Xenium_Preview_Human_Non_diseased_Lung_With_Add_on_FFPE_outs.h5ad'
+        'Xenium_Preview_Human_Non_diseased_Lung_With_Add_on_FFPE_outs_sample-1000.h5ad'
     ),
 }, batch_size=4, max_cells=4)
 print(results)

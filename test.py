@@ -21,6 +21,7 @@ from pathlib import Path
 with vhmodels.load_model(
     project="nicheformer",
     runtime="apptainer",
+    image_path=os.environ.get("VHMODELS_IMAGE_PATH", "vhmodels-nicheformer.sif"),
     device=os.environ.get("VHMODELS_DEVICE", "auto"),
 ) as model:
     embedding = model.embed(
