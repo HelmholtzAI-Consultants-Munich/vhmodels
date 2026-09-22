@@ -5,31 +5,45 @@
 #SBATCH --mem=16G
 #SBATCH --acctg-freq=task=1
 #SBATCH --time=1:00:00
-#SBATCH --output=./output/inference_cpu_job_output.txt
-#SBATCH --error=./output/inference_cpu_job_error.txt
+#SBATCH --output=%x-%j.out
+#SBATCH --error=%x-%j.err
 #SBATCH --nice=10000
 #SBATCH --partition=cpu_p
 #SBATCH --qos=cpu_normal
 
 set -euo pipefail
 
-# Require submission from the repository root.
-PROJECT_ROOT="${SLURM_SUBMIT_DIR:?SLURM_SUBMIT_DIR is not set}"
-if [[ ! -f "${PROJECT_ROOT}/test.py" ]]; then
-    echo "ERROR: Submit this job from the vhmodels repository root." >&2
+if [[ $# -ne 1 ]]; then
+    echo "Usage: sbatch run_inference.sbatch /absolute/path/config.json" >&2
     exit 1
 fi
+CONFIG_FILE="$1"
+if [[ "${CONFIG_FILE}" != /* || ! -f "${CONFIG_FILE}" ]]; then
+    echo "ERROR: Pass an absolute path to an existing config.json." >&2
+    exit 1
+fi
+CONFIG_FILE="$(realpath -e "${CONFIG_FILE}")"
+INFERENCE_SCRIPT="$(jq -er '.INFERENCE_SCRIPT' "${CONFIG_FILE}")"
+if [[ "${INFERENCE_SCRIPT}" != /* || ! -f "${INFERENCE_SCRIPT}" ]]; then
+    echo "ERROR: INFERENCE_SCRIPT must be an absolute path to a Python file." >&2
+    exit 1
+fi
+INFERENCE_SCRIPT="$(realpath -e "${INFERENCE_SCRIPT}")"
 
 # Remove inherited Conda activation markers so the host controller cannot be
 # mistaken for a model runtime environment.
 unset CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_PROMPT_MODIFIER CONDA_SHLVL
 
-# System Python runs the host-side proxy; Apptainer runs the model worker.
-PYTHON_BIN="/usr/bin/python3"
+# The Python environment containing vhmodels runs the host-side proxy.
+PYTHON_BIN="${VHMODELS_PYTHON:-python3}"
+if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
+    echo "ERROR: Python interpreter '${PYTHON_BIN}' is unavailable." >&2
+    exit 1
+fi
+PYTHON_BIN="$(command -v "${PYTHON_BIN}")"
 APPTAINER_BIN="/usr/bin/apptainer"
 
 # Inference configuration shared with build_apptainer.sbatch.
-CONFIG_FILE="${PROJECT_ROOT}/hpc-job-submit/config.json"
 IMAGE_DIR="$(jq -er '.IMAGE_DIR' "${CONFIG_FILE}")"
 MODEL="$(jq -er '.MODEL' "${CONFIG_FILE}")"
 
@@ -37,21 +51,50 @@ MODEL="$(jq -er '.MODEL' "${CONFIG_FILE}")"
 export HF_HOME="$(jq -er '.HF_CACHE_DIR' "${CONFIG_FILE}")"
 export TORCH_HOME="$(jq -er '.TORCH_CACHE_DIR' "${CONFIG_FILE}")"
 mkdir -p "${HF_HOME}" "${TORCH_HOME}"
+HF_HOME="$(realpath -e "${HF_HOME}")"
+TORCH_HOME="$(realpath -e "${TORCH_HOME}")"
 
 # Persistent Apptainer image produced by build_apptainer.sbatch.
 IMAGE_PATH="${IMAGE_DIR}/vhmodels-${MODEL}.sif"
 
 export VHMODELS_IMAGE_PATH="${IMAGE_PATH}"
 
-# Host directories exposed at the same paths inside the container worker.
-export APPTAINER_BINDPATH="${APPTAINER_BINDPATH:+${APPTAINER_BINDPATH},}${PROJECT_ROOT}:${PROJECT_ROOT},${HF_HOME}:${HF_HOME},${TORCH_HOME}:${TORCH_HOME}"
-
-cd "${PROJECT_ROOT}"
-
-[[ -x "${PYTHON_BIN}" ]] || {
-    echo "ERROR: ${PYTHON_BIN} is unavailable." >&2
+# Use a stable working directory regardless of where sbatch was called.
+OUTPUT_DIR="$(jq -r '.OUTPUT_DIR // empty' "${CONFIG_FILE}")"
+if [[ -z "${OUTPUT_DIR}" ]]; then
+    OUTPUT_DIR="$(dirname "${CONFIG_FILE}")/output"
+fi
+if [[ "${OUTPUT_DIR}" != /* ]]; then
+    echo "ERROR: OUTPUT_DIR must be an absolute path." >&2
     exit 1
-}
+fi
+mkdir -p "${OUTPUT_DIR}"
+OUTPUT_DIR="$(realpath -e "${OUTPUT_DIR}")"
+export VHMODELS_OUTPUT_DIR="${OUTPUT_DIR}"
+
+unset VHMODELS_DATA_DIR
+DATA_DIR="$(jq -r '.DATA_DIR // empty' "${CONFIG_FILE}")"
+if [[ -n "${DATA_DIR}" ]]; then
+    if [[ "${DATA_DIR}" != /* || ! -d "${DATA_DIR}" ]]; then
+        echo "ERROR: DATA_DIR must be an absolute path to an existing directory." >&2
+        exit 1
+    fi
+    export VHMODELS_DATA_DIR="$(realpath -e "${DATA_DIR}")"
+fi
+
+INFERENCE_DIR="$(dirname "${INFERENCE_SCRIPT}")"
+BINDS="${OUTPUT_DIR}:${OUTPUT_DIR},${INFERENCE_DIR}:${INFERENCE_DIR},${HF_HOME}:${HF_HOME},${TORCH_HOME}:${TORCH_HOME}"
+if [[ -n "${VHMODELS_DATA_DIR:-}" ]]; then
+    BINDS+=",${VHMODELS_DATA_DIR}:${VHMODELS_DATA_DIR}"
+fi
+export APPTAINER_BINDPATH="${APPTAINER_BINDPATH:+${APPTAINER_BINDPATH},}${BINDS}"
+cd "${OUTPUT_DIR}"
+
+if ! "${PYTHON_BIN}" -c 'import vhmodels; print("Using vhmodels from", vhmodels.__file__)'; then
+    echo "ERROR: vhmodels is not importable by ${PYTHON_BIN}." >&2
+    exit 1
+fi
+
 [[ -x "${APPTAINER_BIN}" ]] || {
     echo "ERROR: ${APPTAINER_BIN} is unavailable." >&2
     exit 1
@@ -63,5 +106,5 @@ cd "${PROJECT_ROOT}"
 
 "${APPTAINER_BIN}" --version
 
-echo "Running ${MODEL} test.py with ${IMAGE_PATH}"
-"${PYTHON_BIN}" "${PROJECT_ROOT}/test.py"
+echo "Running ${MODEL} inference script ${INFERENCE_SCRIPT} with ${IMAGE_PATH}"
+"${PYTHON_BIN}" "${INFERENCE_SCRIPT}"

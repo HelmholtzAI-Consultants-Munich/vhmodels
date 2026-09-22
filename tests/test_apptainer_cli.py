@@ -9,18 +9,18 @@ from vhmodels.vh_checker import cli, factory
 
 
 @pytest.fixture(autouse=True)
-def isolated_apptainer_cache(monkeypatch, tmp_path):
+def isolated_uv_cache(monkeypatch, tmp_path):
     cache_path = tmp_path / "uv-cache"
-    monkeypatch.setenv("VHMODELS_APPTAINER_CACHE_DIR", str(cache_path))
+    monkeypatch.setenv("UV_CACHE_DIR", str(cache_path))
     return cache_path.resolve()
 
 
-def test_apptainer_cache_uses_xdg_default(monkeypatch, tmp_path):
-    monkeypatch.delenv("VHMODELS_APPTAINER_CACHE_DIR")
+def test_uv_build_cache_uses_xdg_default(monkeypatch, tmp_path):
+    monkeypatch.delenv("UV_CACHE_DIR")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
 
     assert (
-        cli._apptainer_uv_cache_dir()
+        cli._uv_build_cache_dir()
         == (tmp_path / "xdg-cache" / "vhmodels" / "apptainer" / "uv").resolve()
     )
 
@@ -69,7 +69,7 @@ def test_create_apptainer_image_rejects_unknown_project():
 
 
 def test_create_apptainer_image_renders_and_builds_definition(
-    monkeypatch, tmp_path, isolated_apptainer_cache
+    monkeypatch, tmp_path, isolated_uv_cache
 ):
     captured = {}
     output_path = tmp_path / "dinobloom.sif"
@@ -102,10 +102,10 @@ def test_create_apptainer_image_renders_and_builds_definition(
         "apptainer",
         "build",
         "--bind",
-        f"{isolated_apptainer_cache}:/opt/vhmodels-build-cache",
+        f"{isolated_uv_cache}:/opt/uv-cache",
         str(output_path.resolve()),
     ]
-    assert isolated_apptainer_cache.is_dir()
+    assert isolated_uv_cache.is_dir()
     assert captured["kwargs"]["check"] is True
     assert captured["staged_registry"] is True
     assert "From: ghcr.io/astral-sh/uv:0.12.3" in captured["definition"]
@@ -127,12 +127,12 @@ def test_create_apptainer_image_renders_and_builds_definition(
     assert "python -m vhmodels.vh_checker.worker serve" in captured["definition"]
     assert "export TMPDIR=/var/tmp" in captured["definition"]
     assert (
-        'mkdir -p "$APPTAINER_ROOTFS/opt/vhmodels-build-cache"'
+        'mkdir -p "$APPTAINER_ROOTFS/opt/uv-cache"'
         in captured["definition"]
     )
-    assert "export UV_CACHE_DIR=/opt/vhmodels-build-cache" in captured["definition"]
+    assert "export UV_CACHE_DIR=/opt/uv-cache" in captured["definition"]
     assert (
-        "export UV_PYTHON_CACHE_DIR=/opt/vhmodels-build-cache/python"
+        "export UV_PYTHON_CACHE_DIR=/opt/uv-cache/python"
         in captured["definition"]
     )
     assert "export UV_LINK_MODE=copy" in captured["definition"]
@@ -147,7 +147,7 @@ def test_create_apptainer_image_renders_and_builds_definition(
         "{exclude_arg}",
     ):
         assert placeholder not in captured["definition"]
-    assert f"Using uv build cache '{isolated_apptainer_cache}'" in result.output
+    assert f"Using uv build cache '{isolated_uv_cache}'" in result.output
     assert "Successfully created Apptainer image" in result.output
 
 
@@ -258,7 +258,7 @@ def test_create_apptainer_image_reports_build_failure(monkeypatch, tmp_path):
 
 
 def test_create_apptainer_image_uses_lima_and_amd64_on_macos(
-    monkeypatch, tmp_path, isolated_apptainer_cache
+    monkeypatch, tmp_path, isolated_uv_cache
 ):
     captured = {}
     output_path = tmp_path / "hyformer.sif"
@@ -304,7 +304,7 @@ def test_create_apptainer_image_uses_lima_and_amd64_on_macos(
     ]
     assert captured["command"][13:15] == [
         "--bind",
-        f"{isolated_apptainer_cache}:/opt/vhmodels-build-cache",
+        f"{isolated_uv_cache}:/opt/uv-cache",
     ]
     assert captured["command"][15] == str(output_path.resolve())
     assert captured["kwargs"]["cwd"].parent == output_path.parent
@@ -353,7 +353,7 @@ def test_create_apptainer_image_rejects_unshared_macos_cache(monkeypatch, tmp_pa
     )
 
     assert result.exit_code == 1
-    assert "build cache must be under your home directory" in result.output
+    assert "uv build cache must be under your home directory" in result.output
 
 
 def test_run_cli_forwards_apptainer_runtime_and_image(monkeypatch, tmp_path):

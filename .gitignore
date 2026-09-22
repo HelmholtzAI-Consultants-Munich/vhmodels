@@ -3,6 +3,8 @@ vhmodels.egg-info/
 apptainer_1.3.2_amd64.deb
 .vscode/
 *.sif
+*.out
+*.err
 .DS_Store
 
 output/
