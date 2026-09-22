@@ -1,9 +1,8 @@
 # Model manifests
 
-This describes the manifest system introduced from [manifest_task.md](manifest_task.md):
-versioned, schema-validated model metadata, with downloading separated from
-model assembly. It's a reference for how the pieces fit together, not a
-restatement of that design doc.
+This describes the manifest system: versioned, schema-validated model metadata,
+with downloading separated from model assembly. It's a reference for how the
+pieces fit together.
 
 ## File layout
 
@@ -186,8 +185,7 @@ class DinoBloom(BaseModel):
 ```
 
 Everything downstream of that — device placement, checkpoint surgery,
-tokenizer wiring, output post-processing — stays in `model.py`, per
-manifest_task.md's original point: the manifest answers *what this model is
+tokenizer wiring, output post-processing — stays in `model.py`: the manifest answers *what this model is
 and where its resources are*, `model.py` answers *how they're assembled into
 a working model*.
 
