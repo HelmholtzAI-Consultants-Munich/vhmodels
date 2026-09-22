@@ -2,7 +2,10 @@
 
 These Slurm scripts build an Apptainer image and run the repository-level
 `test.py` inference entry point on an HPC node. The included `test.py` example
-is hardwired to Nicheformer, so its configuration uses `MODEL=nicheformer`.
+uses H-Optimus-0, so its configuration uses `MODEL=hoptimus0`. It embeds
+`example_data/H-Optimus-0/TUM-AACHEHDV.tif` and writes the embedding to
+`output/hoptimus0_embeddings.txt`. Hugging Face access to the gated model must
+be approved before running the example.
 
 ## Configuration
 
@@ -17,7 +20,7 @@ scripts fail immediately if a required value is still `null`.
 | `UV_CACHE_DIR` | Python package cache used during the build |
 | `HF_CACHE_DIR` | Hugging Face model cache |
 | `TORCH_CACHE_DIR` | PyTorch model cache |
-| `MODEL` | Registered model ID; set to `nicheformer` for the `test.py` example |
+| `MODEL` | Registered model ID; set to `hoptimus0` for the `test.py` example |
 
 ## Scripts
 

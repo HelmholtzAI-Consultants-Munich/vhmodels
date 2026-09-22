@@ -42,6 +42,7 @@ mkdir -p "${HF_HOME}" "${TORCH_HOME}"
 IMAGE_PATH="${IMAGE_DIR}/vhmodels-${MODEL}.sif"
 
 export VHMODELS_IMAGE_PATH="${IMAGE_PATH}"
+export VHMODELS_RUNTIME="apptainer"
 
 # Host directories exposed at the same paths inside the container worker.
 export APPTAINER_BINDPATH="${APPTAINER_BINDPATH:+${APPTAINER_BINDPATH},}${PROJECT_ROOT}:${PROJECT_ROOT},${HF_HOME}:${HF_HOME},${TORCH_HOME}:${TORCH_HOME}"

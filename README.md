@@ -68,17 +68,26 @@ elsewhere. The CLI equivalent is
 Set `APPTAINER_NV=1` when running directly on an NVIDIA Linux/HPC host to expose
 its GPU to the container. The Lima path on macOS is CPU-only.
 
-### Run the Nicheformer HPC example
+### Run the H-Optimus-0 HPC example
 
 The repository-level [`test.py`](test.py) is the inference entry point, used also
 by the Slurm scripts in [`hpc-job-submit`](hpc-job-submit/). This example is
-intentionally configured for Nicheformer, matching the default `MODEL` value in
+configured for H-Optimus-0, matching the default `MODEL` value in
 `hpc-job-submit/config.json`.
 
-For apptainer, run it from the repository root after building the Nicheformer image:
+The script embeds the 224 x 224 TIFF tile at
+`example_data/H-Optimus-0/TUM-AACHEHDV.tif` and writes the result under
+`output/`. The model worker handles TIFF decoding, RGB conversion, and
+normalization; the host needs no Pillow install.
+The TIFF dimensions are verified, but its physical 0.5 microns-per-pixel scale
+must be confirmed from the source of the tile.
+
+The script defaults to Conda. For Apptainer, run it from the repository root
+after building the H-Optimus-0 image and obtaining access to the gated
+Hugging Face model:
 
 ```bash
-python test.py
+VHMODELS_RUNTIME=apptainer python test.py
 ```
 
 See the [HPC job submission guide](hpc-job-submit/README.md)
@@ -120,6 +129,26 @@ model = vhmodels.load_model(project='dinobloom', model='s')
 results = model.embed(input='example_data/DinoBloom/001.bmp')
 print(results)
 ```
+
+### H-Optimus-0
+
+H-Optimus-0 is a gated Hugging Face model. Accept its access conditions on the
+[model page](https://huggingface.co/bioptimus/H-optimus-0), then authenticate
+with `hf auth login` or set `HF_TOKEN` before the model worker starts.
+
+```python
+import vhmodels
+
+with vhmodels.load_model(project="hoptimus0") as model:
+    results = model.embed(input="example_data/H-Optimus-0/TUM-AACHEHDV.tif")
+print(results)  # one 1,536-dimensional embedding for this tile
+```
+
+Inputs must be 224 x 224 H&E tiles extracted at 0.5 microns per pixel. The
+integration accepts one tile, a list of tiles, or a directory of tiles; it does
+not tile or aggregate whole-slide images. The example TIFF's dimensions and
+RGB decoding are checked by the worker, but its physical scale is not encoded
+in a way this integration can verify.
 
 ### Hyformer
 

@@ -28,7 +28,14 @@ from vhmodels.models.source_resolver import SourceResolver
 
 _SOURCE_ADAPTER = TypeAdapter(Source)
 
-_REAL_MODELS = ["dinobloom", "hyformer", "mole", "nicheformer", "prottrans"]
+_REAL_MODELS = [
+    "dinobloom",
+    "hoptimus0",
+    "hyformer",
+    "mole",
+    "nicheformer",
+    "prottrans",
+]
 
 
 # --- schema: discriminated union + strictness -------------------------------

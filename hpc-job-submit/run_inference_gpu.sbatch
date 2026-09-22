@@ -42,6 +42,7 @@ mkdir -p "${HF_HUB_CACHE}"
 # Persistent image produced by build_apptainer.sbatch.
 IMAGE_PATH="${IMAGE_DIR}/vhmodels-${MODEL}.sif"
 export VHMODELS_IMAGE_PATH="${IMAGE_PATH}"
+export VHMODELS_RUNTIME="apptainer"
 
 # Request NVIDIA driver/device passthrough and explicit CUDA model placement.
 export APPTAINER_NV=1
