@@ -78,7 +78,7 @@ and optional PyTorch backend. The Ubuntu 24.04 image uses uv during the build an
 installs the finished environment at `/opt/venv`. Completed uv downloads and
 managed Python archives are kept in the per-user build cache at
 `${XDG_CACHE_HOME:-~/.cache}/vhmodels/apptainer/uv`; the cache is not included in
-the SIF. Override it with `VHMODELS_APPTAINER_CACHE_DIR`, for example to use a
+the SIF. Override it with `UV_CACHE_DIR`, for example to use a
 fast per-user scratch filesystem on HPC. On macOS, the override must be under
 the user's home directory so Lima can access it. This cache reduces repeated
 downloads; rebuilding still creates and compresses a complete SIF, so it does

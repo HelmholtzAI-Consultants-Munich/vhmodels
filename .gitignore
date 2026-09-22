@@ -3,6 +3,9 @@ vhmodels.egg-info/
 apptainer_1.3.2_amd64.deb
 .vscode/
 *.sif
+*.out
+*.err
+hpc-job-submit/config.local.json
 .DS_Store
 
 output/

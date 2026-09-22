@@ -54,7 +54,7 @@ def test_example_script_passes_tiff_to_model(monkeypatch, tmp_path, runtime):
 
     runpy.run_path(str(_EXAMPLE_SCRIPT), run_name="__main__")
 
-    assert received["input"] == "example_data/H-Optimus-0/TUM-AACHEHDV.tif"
+    assert received["input"] == str(_EXAMPLE_TILE)
     assert received["batch_size"] == 1
     assert received["load_kwargs"]["project"] == "hoptimus0"
     assert received["load_kwargs"]["runtime"] == runtime

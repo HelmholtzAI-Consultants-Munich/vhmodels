@@ -70,10 +70,11 @@ its GPU to the container. The Lima path on macOS is CPU-only.
 
 ### Run the Nicheformer HPC example
 
-The repository-level [`test.py`](test.py) is the inference entry point, used also
-by the Slurm scripts in [`hpc-job-submit`](hpc-job-submit/). This example is
-intentionally configured for Nicheformer, matching the default `MODEL` value in
-`hpc-job-submit/config.json`.
+The repository-level [`test.py`](test.py) is an example inference script for
+Nicheformer, matching the default `MODEL` value in
+`hpc-job-submit/config.json`. It reads `VHMODELS_DATA_DIR` when set and otherwise
+uses the repository's `example_data/`. The Slurm templates can also run a custom
+Python inference script from any submission directory.
 
 For apptainer, run it from the repository root after building the Nicheformer image:
 
@@ -81,8 +82,8 @@ For apptainer, run it from the repository root after building the Nicheformer im
 python test.py
 ```
 
-See the [HPC job submission guide](hpc-job-submit/README.md)
-for the Slurm workflow.
+See the [HPC job submission guide](hpc-job-submit/README.md) for the Slurm
+workflow, including use from an installed package.
 
 Both Conda- and Apptainer-backed models start one worker lazily on their first
 `embed()` call. The model is loaded once in that worker and reused by later

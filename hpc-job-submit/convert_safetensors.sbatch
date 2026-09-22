@@ -4,18 +4,17 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=128G
 #SBATCH --time=6:00:00
-#SBATCH --output=./output/convert_safetensors_job_output.txt
-#SBATCH --error=./output/convert_safetensors_job_error.txt
+#SBATCH --output=%x-%j.out
+#SBATCH --error=%x-%j.err
 #SBATCH --nice=10000
 #SBATCH --partition=cpu_p
 #SBATCH --qos=cpu_normal
 
 set -euo pipefail
 
-# Require submission from the repository root.
-PROJECT_ROOT="${SLURM_SUBMIT_DIR:?SLURM_SUBMIT_DIR is not set}"
-if [[ ! -f "${PROJECT_ROOT}/hpc-job-submit/config.json" ]]; then
-    echo "ERROR: Submit this job from the vhmodels repository root." >&2
+CONFIG_FILE="${1:?Usage: sbatch convert_safetensors.sbatch /absolute/path/config.json}"
+if [[ "${CONFIG_FILE}" != /* || ! -f "${CONFIG_FILE}" ]]; then
+    echo "ERROR: Pass an absolute path to an existing config.json." >&2
     exit 1
 fi
 
@@ -23,7 +22,6 @@ fi
 MODEL_ID="${MODEL_ID:-virtual-human-chc/prot_t5_xxl_bfd}"
 SOURCE_REVISION="${SOURCE_REVISION:-main}"
 
-CONFIG_FILE="${PROJECT_ROOT}/hpc-job-submit/config.json"
 IMAGE_DIR="$(jq -er '.IMAGE_DIR' "${CONFIG_FILE}")"
 IMAGE_PATH="${IMAGE_DIR}/vhmodels-prottrans.sif"
 APPTAINER_BIN="/usr/bin/apptainer"
