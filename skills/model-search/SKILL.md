@@ -22,7 +22,7 @@ description: Discovers and selects Helmholtz Munich VH CHC embedding models (Din
 vh-checker list
 ```
 
-Authoritative registry. Do not hardcode checkpoint names — they change. Optional checkout path: `vhmodels/models/*/config.json`.
+Authoritative registry. Do not hardcode checkpoint names — they change. Optional checkout path: `vhmodels/models/*/model.json` (+ `manifests/*.json` for per-variant sources).
 
 ## Modality → project
 

@@ -1,0 +1,7 @@
+setuptools
+pydantic
+torch==2.9.0
+transformers==4.57.1
+sentencepiece==0.2.1
+hf_xet==1.2.0
+protobuf==6.33.0
