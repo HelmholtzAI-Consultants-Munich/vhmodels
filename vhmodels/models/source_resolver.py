@@ -14,6 +14,7 @@ through unchanged for the same reason: ``torch.hub.load`` manages its own
 cache.
 """
 
+import hashlib
 import importlib.util
 from pathlib import Path
 
@@ -25,6 +26,11 @@ from vhmodels.models.schema import (
     TorchHubSource,
     URLSource,
 )
+
+
+def _cache_key(*parts):
+    """Short, stable name for what a cache entry holds: a hash of its identity."""
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:12]
 
 
 class ResolvedHuggingFace:
@@ -111,40 +117,51 @@ class SourceResolver:
         return ResolvedTorchHub(source.repo, source.revision, source.entrypoint)
 
     def _resolve_url(self, source):
-        import hashlib
         import os
         import tempfile
         import urllib.request
 
         filename = source.filename or source.url.rsplit("/", 1)[-1]
-        destination = Path(tempfile.gettempdir()) / "vhmodels-sources" / filename
+        # Keyed on url and sha256 so distinct sources never share a file; the
+        # leaf keeps the original filename for consumers that read its extension.
+        destination = (
+            Path(tempfile.gettempdir())
+            / "vhmodels-sources"
+            / "url"
+            / _cache_key(source.url, source.sha256 or "")
+            / filename
+        )
         destination.parent.mkdir(parents=True, exist_ok=True)
 
-        def validate_checksum(path):
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            if digest != source.sha256:
-                raise ValueError(
-                    f"Checksum mismatch for '{source.url}': "
-                    f"expected {source.sha256}, got {digest}."
-                )
+        def sha256_of(path):
+            return hashlib.sha256(path.read_bytes()).hexdigest()
 
-        if not destination.exists():
-            with tempfile.NamedTemporaryFile(
-                dir=destination.parent,
-                prefix=f".{destination.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as temporary_file:
-                temporary_path = Path(temporary_file.name)
-            try:
-                urllib.request.urlretrieve(source.url, temporary_path)
-                if source.sha256:
-                    validate_checksum(temporary_path)
-                os.replace(temporary_path, destination)
-            finally:
-                temporary_path.unlink(missing_ok=True)
-        elif source.sha256:
-            validate_checksum(destination)
+        # A published file was verified when it was downloaded, so a mismatch
+        # here means it was damaged since: fetch it again instead of failing.
+        if destination.exists() and (
+            not source.sha256 or sha256_of(destination) == source.sha256
+        ):
+            return ResolvedURL(destination, source.sha256)
+
+        with tempfile.NamedTemporaryFile(
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+        try:
+            urllib.request.urlretrieve(source.url, temporary_path)
+            if source.sha256:
+                digest = sha256_of(temporary_path)
+                if digest != source.sha256:
+                    raise ValueError(
+                        f"Checksum mismatch for '{source.url}': "
+                        f"expected {source.sha256}, got {digest}."
+                    )
+            os.replace(temporary_path, destination)
+        finally:
+            temporary_path.unlink(missing_ok=True)
         return ResolvedURL(destination, source.sha256)
 
     def _resolve_git(self, source):
@@ -153,42 +170,37 @@ class SourceResolver:
         import subprocess
         import tempfile
 
+        name = source.url.rsplit("/", 1)[-1].removesuffix(".git")
+        # Keyed on url and revision, so an existing clone is always the one the
+        # manifest asks for; changing the revision simply clones afresh.
         destination = (
             Path(tempfile.gettempdir())
             / "vhmodels-sources"
-            / (source.url.rsplit("/", 1)[-1].removesuffix(".git"))
+            / "git"
+            / f"{name}-{_cache_key(source.url, source.revision)}"
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():
             temporary_path = Path(
-                tempfile.mkdtemp(
-                    dir=destination.parent,
-                    prefix=f".{destination.name}.",
-                )
+                tempfile.mkdtemp(dir=destination.parent, prefix=f".{name}.")
             )
             try:
                 subprocess.run(
                     ["git", "clone", source.url, str(temporary_path)], check=True
                 )
-                if source.revision:
-                    subprocess.run(
-                        [
-                            "git",
-                            "-C",
-                            str(temporary_path),
-                            "checkout",
-                            source.revision,
-                        ],
-                        check=True,
-                    )
-                os.replace(temporary_path, destination)
+                subprocess.run(
+                    ["git", "-C", str(temporary_path), "checkout", source.revision],
+                    check=True,
+                )
+                try:
+                    os.replace(temporary_path, destination)
+                except OSError:
+                    # A concurrent resolve published the same key first. Its
+                    # clone is equivalent to ours, so keep it and drop ours.
+                    if not destination.is_dir():
+                        raise
             finally:
                 shutil.rmtree(temporary_path, ignore_errors=True)
-        elif source.revision:
-            subprocess.run(
-                ["git", "-C", str(destination), "checkout", source.revision],
-                check=True,
-            )
         return ResolvedGit(destination, source.revision)
 
     def _resolve_local(self, source, model_dir):

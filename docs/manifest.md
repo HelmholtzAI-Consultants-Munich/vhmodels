@@ -56,8 +56,8 @@ Pydantic discriminated union on `type`:
 |---|---|---|
 | `huggingface` | `repo_id`, `revision?`, `files?` | repo id/revision, plus one downloaded local path per `files` entry |
 | `torch_hub` | `repo`, `revision?`, `entrypoint?` | passed through — `torch.hub.load` manages its own cache |
-| `url` | `url`, `sha256?`, `filename?` | one downloaded local path, checksummed if `sha256` is given |
-| `git` | `url`, `revision?` | a local clone path |
+| `url` | `url`, `sha256?`, `filename?` | one downloaded local path, cached per `url`+`sha256` and checksummed if `sha256` is given |
+| `git` | `url`, `revision` | a local clone path, cached per `url`+`revision` |
 | `local` | `path` | a path resolved relative to the model directory |
 | `python_package` | `name`, `version?` | confirms the package is importable in the current environment |
 
@@ -66,6 +66,23 @@ id/revision — nothing is downloaded, because `transformers.from_pretrained()`
 already knows how to fetch and cache that repo itself. Declaring `files`
 (DinoBloom's weights, Hyformer's four files, MolE's `config.yaml`/`model.pth`)
 is what tells `SourceResolver` to actually call `hf_hub_download` for each one.
+
+#### Pinning
+
+Downloaded sources are cached by what they identify, so a source should name
+something that never changes: a commit sha (or tag) for `git` — which is why its
+`revision` is required — a commit sha for `huggingface`, and a `sha256` for
+`url`. The manifest is then the lockfile: to upgrade, edit it. A new revision or
+hash is a different cache key, so the new version is fetched and nothing has to
+be deleted by hand. Everything below lives under `<system temp dir>/vhmodels-sources/`.
+
+- `git` — cached in `git/<repo>-<key>`, keyed by `url` *and* `revision`, and the
+  directory only appears once the clone *and* the checkout succeeded. A branch
+  name works, but it stays pinned to whatever it was at first clone.
+- `url` — cached in `url/<key>/<filename>`, keyed by `url` *and* `sha256`. A
+  cached file that no longer matches its `sha256` is downloaded again; a fresh
+  download that doesn't match raises. Without a `sha256` the file stays pinned to
+  its first download.
 
 String fields anywhere inside a source may contain a `{variant}` placeholder.
 It's substituted with the requested variant id when the manifest is resolved

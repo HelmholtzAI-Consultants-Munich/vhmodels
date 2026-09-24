@@ -5,6 +5,7 @@ manifests/<variant>.json -> Registry.resolve() -> ResolvedManifest ->
 SourceResolver -> local resources.
 """
 
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -310,13 +311,37 @@ def test_resolve_local_source_missing_raises(tmp_path):
         SourceResolver().resolve({"weights": source}, model_dir=tmp_path)
 
 
+def _sha256(content):
+    return hashlib.sha256(content).hexdigest()
+
+
+def _url_source(url="https://example.test/weights.bin", sha256=None):
+    source = {"type": "url", "url": url}
+    if sha256 is not None:
+        source["sha256"] = sha256
+    return _SOURCE_ADAPTER.validate_python(source)
+
+
+def _fake_download(monkeypatch, tmp_path, *contents):
+    """Serve `contents` in order, one per download (the last one repeats)."""
+    downloads = []
+
+    def download(url, path):
+        downloads.append(url)
+        path.write_bytes(contents[min(len(downloads), len(contents)) - 1])
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(urllib.request, "urlretrieve", download)
+    return downloads
+
+
+def _cached_urls(tmp_path):
+    """Every file left in the URL cache, temporary download files included."""
+    cache = tmp_path / "vhmodels-sources" / "url"
+    return [path for path in cache.rglob("*") if path.is_file()]
+
+
 def test_resolve_url_retries_after_interrupted_download(monkeypatch, tmp_path):
-    source = _SOURCE_ADAPTER.validate_python(
-        {
-            "type": "url",
-            "url": "https://example.test/weights.bin",
-        }
-    )
     attempts = []
 
     def download(url, path):
@@ -330,54 +355,152 @@ def test_resolve_url_retries_after_interrupted_download(monkeypatch, tmp_path):
     monkeypatch.setattr(urllib.request, "urlretrieve", download)
 
     with pytest.raises(OSError, match="download interrupted"):
+        SourceResolver()._resolve_url(_url_source())
+
+    assert _cached_urls(tmp_path) == []
+
+    resolved = SourceResolver()._resolve_url(_url_source())
+
+    assert resolved.path.name == "weights.bin"
+    assert resolved.path.read_bytes() == b"complete"
+    assert _cached_urls(tmp_path) == [resolved.path]
+    assert len(attempts) == 2
+    assert all(path != resolved.path for path in attempts)
+
+
+def test_resolve_url_reuses_downloaded_file(monkeypatch, tmp_path):
+    downloads = _fake_download(monkeypatch, tmp_path, b"complete")
+    source = _url_source(sha256=_sha256(b"complete"))
+
+    first = SourceResolver()._resolve_url(source)
+    second = SourceResolver()._resolve_url(source)
+
+    assert first.path == second.path
+    assert first.path.name == "weights.bin"
+    assert len(downloads) == 1
+
+
+def test_resolve_url_keys_cache_on_url_not_just_filename(monkeypatch, tmp_path):
+    downloads = _fake_download(monkeypatch, tmp_path, b"v1", b"v2")
+
+    first = SourceResolver()._resolve_url(
+        _url_source("https://example.test/v1/weights.bin")
+    )
+    second = SourceResolver()._resolve_url(
+        _url_source("https://example.test/v2/weights.bin")
+    )
+
+    assert first.path != second.path
+    assert (first.path.read_bytes(), second.path.read_bytes()) == (b"v1", b"v2")
+    assert len(downloads) == 2
+
+
+def test_resolve_url_downloads_again_when_pinned_sha256_changes(monkeypatch, tmp_path):
+    downloads = _fake_download(monkeypatch, tmp_path, b"v1", b"v2")
+
+    old = SourceResolver()._resolve_url(_url_source(sha256=_sha256(b"v1")))
+    new = SourceResolver()._resolve_url(_url_source(sha256=_sha256(b"v2")))
+
+    assert old.path != new.path
+    assert (old.path.read_bytes(), new.path.read_bytes()) == (b"v1", b"v2")
+    assert len(downloads) == 2
+
+
+def test_resolve_url_downloads_corrupted_cached_file_again(monkeypatch, tmp_path):
+    downloads = _fake_download(monkeypatch, tmp_path, b"complete")
+    source = _url_source(sha256=_sha256(b"complete"))
+
+    first = SourceResolver()._resolve_url(source)
+    first.path.write_bytes(b"corrupted")
+    second = SourceResolver()._resolve_url(source)
+
+    assert second.path == first.path
+    assert second.path.read_bytes() == b"complete"
+    assert len(downloads) == 2
+
+
+def test_resolve_url_does_not_cache_wrong_checksum(monkeypatch, tmp_path):
+    _fake_download(monkeypatch, tmp_path, b"unexpected")
+    source = _url_source(sha256=_sha256(b"complete"))
+
+    with pytest.raises(ValueError, match="Checksum mismatch"):
         SourceResolver()._resolve_url(source)
 
-    destination = tmp_path / "vhmodels-sources" / "weights.bin"
-    assert not destination.exists()
-
-    resolved = SourceResolver()._resolve_url(source)
-
-    assert resolved.path == destination
-    assert destination.read_bytes() == b"complete"
-    assert len(attempts) == 2
-    assert all(path != destination for path in attempts)
+    assert _cached_urls(tmp_path) == []
 
 
-def test_resolve_git_checks_out_revision_in_existing_clone(monkeypatch, tmp_path):
-    source = _SOURCE_ADAPTER.validate_python(
-        {
-            "type": "git",
-            "url": "https://example.test/repository.git",
-            "revision": "new-revision",
-        }
+def _git_source(revision="pinned-revision", url="https://example.test/repository.git"):
+    return _SOURCE_ADAPTER.validate_python(
+        {"type": "git", "url": url, "revision": revision}
     )
-    destination = tmp_path / "vhmodels-sources" / "repository"
-    destination.mkdir(parents=True)
+
+
+@pytest.mark.parametrize("revision", [{}, {"revision": ""}])
+def test_git_source_requires_a_revision(revision):
+    with pytest.raises(ValidationError):
+        _SOURCE_ADAPTER.validate_python(
+            {"type": "git", "url": "https://example.test/repository.git", **revision}
+        )
+
+
+def _fake_git(monkeypatch, tmp_path):
+    """Record git invocations, materializing a clone for every `git clone`."""
     commands = []
 
+    def run(command, check):
+        commands.append(command)
+        if command[1] == "clone":
+            (Path(command[-1]) / ".git").mkdir()
+
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda command, check: commands.append(command),
+    monkeypatch.setattr(subprocess, "run", run)
+    return commands
+
+
+def _subcommands(commands):
+    """The subcommand of each recorded invocation; checkout runs `git -C <dir>`."""
+    return [command[3] if command[1] == "-C" else command[1] for command in commands]
+
+
+def test_resolve_git_reuses_clone_for_same_revision(monkeypatch, tmp_path):
+    commands = _fake_git(monkeypatch, tmp_path)
+    source = _git_source("pinned-revision")
+
+    first = SourceResolver()._resolve_git(source)
+    second = SourceResolver()._resolve_git(source)
+
+    assert first.path == second.path
+    assert first.path.parent == tmp_path / "vhmodels-sources" / "git"
+    assert _subcommands(commands) == ["clone", "checkout"]
+
+
+def test_resolve_git_caches_each_revision_separately(monkeypatch, tmp_path):
+    commands = _fake_git(monkeypatch, tmp_path)
+
+    old = SourceResolver()._resolve_git(_git_source("old-revision"))
+    new = SourceResolver()._resolve_git(_git_source("new-revision"))
+
+    assert old.path != new.path
+    assert _subcommands(commands) == ["clone", "checkout", "clone", "checkout"]
+    assert commands[1][-1] == "old-revision"
+    assert commands[3][-1] == "new-revision"
+
+
+def test_resolve_git_keys_cache_on_url_not_just_repository_name(monkeypatch, tmp_path):
+    _fake_git(monkeypatch, tmp_path)
+
+    first = SourceResolver()._resolve_git(
+        _git_source(url="https://example.test/one/repository.git")
+    )
+    second = SourceResolver()._resolve_git(
+        _git_source(url="https://example.test/two/repository.git")
     )
 
-    resolved = SourceResolver()._resolve_git(source)
-
-    assert resolved.path == destination
-    assert commands == [
-        ["git", "-C", str(destination), "checkout", "new-revision"]
-    ]
+    assert first.path != second.path
 
 
 def test_resolve_git_does_not_cache_failed_checkout(monkeypatch, tmp_path):
-    source = _SOURCE_ADAPTER.validate_python(
-        {
-            "type": "git",
-            "url": "https://example.test/repository.git",
-            "revision": "requested-revision",
-        }
-    )
+    source = _git_source("requested-revision")
     checkout_attempts = 0
     clone_attempts = 0
 
@@ -397,13 +520,13 @@ def test_resolve_git_does_not_cache_failed_checkout(monkeypatch, tmp_path):
     with pytest.raises(subprocess.CalledProcessError):
         SourceResolver()._resolve_git(source)
 
-    destination = tmp_path / "vhmodels-sources" / "repository"
-    assert not destination.exists()
+    cache = tmp_path / "vhmodels-sources" / "git"
+    assert [path for path in cache.iterdir() if not path.name.startswith(".")] == []
 
     resolved = SourceResolver()._resolve_git(source)
 
-    assert resolved.path == destination
-    assert destination.is_dir()
+    assert resolved.path.is_dir()
+    assert resolved.path.parent == cache
     assert clone_attempts == 2
     assert checkout_attempts == 2
 

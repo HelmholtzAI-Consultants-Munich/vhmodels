@@ -62,7 +62,7 @@ class URLSource(_Strict):
 class GitSource(_Strict):
     type: Literal["git"] = "git"
     url: str
-    revision: Optional[str] = None
+    revision: str = Field(min_length=1)
 
 
 class LocalSource(_Strict):
