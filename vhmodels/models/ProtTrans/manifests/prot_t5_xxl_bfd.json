@@ -1,3 +1,10 @@
 {
-  "variant": "prot_t5_xxl_bfd"
+  "variant": "prot_t5_xxl_bfd",
+  "sources": {
+    "weights": {
+      "type": "huggingface",
+      "repo_id": "virtual-human-chc/{variant}",
+      "revision": "e13d3644de647fb94c6afd12fe09d8c3667e97ee"
+    }
+  }
 }

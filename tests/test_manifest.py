@@ -217,6 +217,19 @@ def test_resolve_variant_manifest_overrides_model_level_source():
     )
 
 
+def test_prottrans_xxl_variants_pin_their_weights_revision():
+    pins = {
+        "prot_t5_xxl_uniref50": "2bd8ac66252842975aead5859c9f8e5d1e706ed2",
+        "prot_t5_xxl_bfd": "e13d3644de647fb94c6afd12fe09d8c3667e97ee",
+    }
+    for variant, revision in pins.items():
+        resolved = REGISTRY.resolve("prottrans", variant)
+        assert resolved.sources["weights"].repo_id == f"virtual-human-chc/{variant}"
+        assert resolved.sources["weights"].revision == revision
+        # The tokenizer keeps following the repo's default revision.
+        assert resolved.sources["tokenizer"].revision is None
+
+
 def test_resolve_description_falls_back_to_model_level():
     resolved = REGISTRY.resolve("dinobloom", "s")
     assert resolved.description == REGISTRY.get_model("dinobloom").model.description

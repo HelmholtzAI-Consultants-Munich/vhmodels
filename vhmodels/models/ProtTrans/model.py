@@ -55,6 +55,10 @@ class ProtTrans(BaseModel):
         self.device = None
         self.variant = None
 
+    @staticmethod
+    def _revision(source):
+        return {"revision": source.revision} if source.revision else {}
+
     def load_model(self, model=None, **kwargs):
         """
         Downloads and loads the artifacts for the specified model in the ProtTrans HF repository. Possible options are:
@@ -94,32 +98,16 @@ class ProtTrans(BaseModel):
             )
         self.variant = model
 
-        # prot_electra_bfd's tokenizer/weights sources point at the
-        # generator/discriminator repos respectively -- see
-        # manifests/prot_electra_bfd.json. Every other variant's sources
-        # resolve to the same "virtual-human-chc/{variant}" repo, letting
-        # transformers.from_pretrained() do the rest.
         manifest = REGISTRY.resolve(self.PROJECT, model)
         resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
+        tokenizer, weights = resources["tokenizer"], resources["weights"]
 
         tokenizer_cls, model_cls = self.model_specs[model]
         self.tokenizer = tokenizer_cls.from_pretrained(
-            resources["tokenizer"].repo_id, do_lower_case=False
+            tokenizer.repo_id, do_lower_case=False, **self._revision(tokenizer)
         )
-
-        model_kwargs = {}
-        if model == "prot_t5_xxl_uniref50":
-            model_kwargs.update(
-                revision="2bd8ac66252842975aead5859c9f8e5d1e706ed2",
-                use_safetensors=True,
-            )
-        elif model == "prot_t5_xxl_bfd":
-            model_kwargs.update(
-                revision="e13d3644de647fb94c6afd12fe09d8c3667e97ee",
-                use_safetensors=True,
-            )
         self.model = model_cls.from_pretrained(
-            resources["weights"].repo_id, **model_kwargs
+            weights.repo_id, **self._revision(weights)
         )
 
         self.model = self.model.to(self.device)
