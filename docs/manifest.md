@@ -99,7 +99,10 @@ example: its tokenizer and weights come from two *different* upstream repos
 `manifests/prot_electra_bfd.json` replaces both `tokenizer` and `weights`
 wholesale instead of relying on the `{variant}` template. This also let
 `ProtTrans/model.py` drop the `if model == "prot_electra_bfd": ...`
-special-case it used to have — the routing is now data, not code.
+special-case it used to have — the routing is now data, not code. The
+`prot_t5_xxl_*` manifests override `weights` the same way, only to
+pin a Hugging Face commit in `revision`, which `model.py` passes on to
+`from_pretrained()`.
 
 ## Resolving a manifest
 
