@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "model": {
+    "id": "hoptimus0",
+    "version": "1.0.0",
+    "description": "H-Optimus-0 extracts 1536-dimensional features from H&E histology tiles with a 1.1B-parameter vision transformer.",
+    "homepage": "https://huggingface.co/bioptimus/H-optimus-0"
+  },
+  "implementation": {
+    "class_path": "HOptimus0.model.HOptimus0",
+    "capabilities": ["embed"]
+  },
+  "supported_platforms": ["linux-x86_64"],
+  "runtimes": {
+    "conda": {
+      "env_name": "vhmodels-hoptimus0",
+      "platforms": {
+        "linux-x86_64": { "environment": "environment.linux-x86_64.yml" }
+      }
+    },
+    "apptainer": {
+      "platform": "linux-x86_64",
+      "python": "3.10",
+      "requirements": "requirements.linux-x86_64.txt",
+      "torch_backend": "cu126"
+    }
+  },
+  "sources": {
+    "checkpoint": {
+      "type": "huggingface",
+      "repo_id": "bioptimus/H-optimus-0",
+      "revision": "b145cc1e6c6b30d3251aa8b1f844e6974188a743"
+    }
+  }
+}
