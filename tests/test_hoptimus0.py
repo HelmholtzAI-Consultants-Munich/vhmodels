@@ -26,7 +26,7 @@ def test_registry_declares_tile_embedder_and_pinned_checkpoint():
 
 
 @pytest.mark.parametrize("runtime", ["conda", "apptainer"])
-def test_example_script_embeds_the_real_tiff(monkeypatch, tmp_path, runtime):
+def test_example_script_passes_tiff_to_model(monkeypatch, tmp_path, runtime):
     assert _EXAMPLE_TILE.is_file()
     assert _EXAMPLE_TILE.suffix.lower() == ".tif"
     received = {}
@@ -75,7 +75,6 @@ def test_worker_decodes_example_tiff_to_correct_rgb_shape():
     pytest.importorskip("timm")
     from vhmodels.models.HOptimus0.model import HOptimus0
 
-    tile = HOptimus0._open_tile(_EXAMPLE_TILE)
+    batch = HOptimus0()._preprocess(HOptimus0._collect_tiles(_EXAMPLE_TILE))
 
-    assert tile.mode == "RGB"
-    assert tile.size == (224, 224)
+    assert batch.shape == (1, 3, 224, 224)

@@ -20,6 +20,7 @@ class HOptimus0(BaseModel):
     PROJECT = "hoptimus0"
     TILE_SIZE = (224, 224)
     EMBEDDING_DIM = 1536
+    SUPPORTED_MODES = {"RGB", "RGBA"}
     SUPPORTED_SUFFIXES = {
         ".bmp",
         ".jpeg",
@@ -68,7 +69,13 @@ class HOptimus0(BaseModel):
         self.model.eval()
 
     @classmethod
-    def _validate_tile_size(cls, image, source):
+    def _validate_tile(cls, image, source):
+        """Check the image mode and size (both available from the header)."""
+        if image.mode not in cls.SUPPORTED_MODES:
+            raise ValueError(
+                "H-Optimus-0 expects 8-bit RGB(A) tiles; "
+                f"{source} has image mode {image.mode!r}."
+            )
         if image.size != cls.TILE_SIZE:
             raise ValueError(
                 "H-Optimus-0 expects 224 x 224 tiles sampled at 0.5 microns "
@@ -77,54 +84,67 @@ class HOptimus0(BaseModel):
             )
 
     @classmethod
-    def _open_tile(cls, path):
-        """Open a tile, validate its size, and convert it to RGB."""
-        path = Path(path)
-        if not path.is_file():
-            raise FileNotFoundError(f"Image file not found: {path}")
-        with Image.open(path) as image:
-            cls._validate_tile_size(image, path)
-            return image.convert("RGB")
-
-    @classmethod
     def _collect_tiles(cls, input):
-        """Collect tiles from a path, directory, image, or ordered list."""
-        if isinstance(input, Path):
-            input = str(input)
+        """Return the ordered tiles (paths or PIL images) after validating them.
 
-        if isinstance(input, str):
+        Only file headers are read here; pixels are decoded per batch in
+        ``_preprocess``, so memory scales with batch size, not input size.
+        """
+        # case 1: path input (file or folder of tiles)
+        if isinstance(input, (str, Path)):
             path = Path(input)
             if path.is_dir():
-                paths = [
+                tiles = [
                     candidate
                     for candidate in sorted(path.iterdir())
                     if candidate.is_file()
                     and candidate.suffix.lower() in cls.SUPPORTED_SUFFIXES
                 ]
-                if not paths:
+                if not tiles:
                     raise ValueError(f"No supported image tiles found in: {path}")
-                return [cls._open_tile(candidate) for candidate in paths]
-            return [cls._open_tile(path)]
+            else:
+                tiles = [path]
 
-        if isinstance(input, Image.Image):
-            cls._validate_tile_size(input, "the supplied image")
-            return [input.convert("RGB")]
+        # case 2: single PIL image
+        elif isinstance(input, Image.Image):
+            tiles = [input]
 
-        if isinstance(input, list):
+        # case 3: list of images or paths
+        elif isinstance(input, list):
             if not input:
                 raise ValueError("At least one image tile is required.")
-            tiles = []
-            for item in input:
-                if isinstance(item, (str, Path)):
-                    tiles.append(cls._open_tile(item))
-                elif isinstance(item, Image.Image):
-                    cls._validate_tile_size(item, "a supplied image")
-                    tiles.append(item.convert("RGB"))
-                else:
-                    raise ValueError(f"Unsupported list item type: {type(item)}")
-            return tiles
+            tiles = input
 
-        raise ValueError(f"Unsupported input type: {type(input)}")
+        else:
+            raise ValueError(f"Unsupported input type: {type(input)}")
+
+        # validate every tile from its header before any decoding
+        for tile in tiles:
+            if isinstance(tile, Image.Image):
+                cls._validate_tile(tile, "a supplied image")
+            elif isinstance(tile, (str, Path)):
+                if not Path(tile).is_file():
+                    raise FileNotFoundError(f"Image file not found: {tile}")
+                with Image.open(tile) as image:
+                    cls._validate_tile(image, tile)
+            else:
+                raise ValueError(f"Unsupported list item type: {type(tile)}")
+        return tiles
+
+    def _preprocess(self, tiles):
+        """Decode a batch of validated tiles into a (N, 3, 224, 224) tensor.
+
+        Applies RGB conversion, ToTensor, and H-Optimus-0 normalization.
+        """
+        tensors = []
+        for tile in tiles:
+            if isinstance(tile, Image.Image):
+                image = tile.convert("RGB")
+            else:
+                with Image.open(tile) as opened:
+                    image = opened.convert("RGB")
+            tensors.append(self.img_transform(image))
+        return torch.stack(tensors)
 
     def _autocast_context(self, amp):
         if amp and self.device.type == "cuda":
@@ -148,20 +168,14 @@ class HOptimus0(BaseModel):
             raise ValueError("batch_size must be a positive integer.")
 
         tiles = self._collect_tiles(input)
-        tensors = [self.img_transform(tile) for tile in tiles]
         all_features = []
 
         self.model.eval()
         with torch.inference_mode():
-            for start in range(0, len(tensors), batch_size):
-                batch = torch.stack(tensors[start : start + batch_size]).to(
+            for start in range(0, len(tiles), batch_size):
+                batch = self._preprocess(tiles[start : start + batch_size]).to(
                     self.device
                 )
-                if tuple(batch.shape[1:]) != (3, *self.TILE_SIZE):
-                    raise RuntimeError(
-                        "Unexpected H-Optimus-0 input shape: "
-                        f"{tuple(batch.shape)}; expected (batch, 3, 224, 224)."
-                    )
                 with self._autocast_context(amp):
                     features = self.model(batch)
                 if features.ndim != 2 or features.shape[1] != self.EMBEDDING_DIM:
