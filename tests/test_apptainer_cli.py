@@ -162,6 +162,7 @@ def test_create_apptainer_image_renders_and_builds_definition(
             "cu118",
             "requirements-exclude.linux-x86_64.txt",
         ),
+        ("hoptimus0", "HOptimus0", "3.10", "cu126", None),
         ("mole", "MolE", "3.10", "cu126", None),
         ("nicheformer", "Nicheformer", "3.10", "cu126", None),
         ("prottrans", "ProtTrans", "3.11", None, None),

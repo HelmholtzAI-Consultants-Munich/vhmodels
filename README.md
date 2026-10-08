@@ -121,6 +121,26 @@ results = model.embed(input='example_data/DinoBloom/001.bmp')
 print(results)
 ```
 
+### H-Optimus-0
+
+H-Optimus-0 is a gated Hugging Face model. Accept its access conditions on the
+[model page](https://huggingface.co/bioptimus/H-optimus-0), then authenticate
+with `hf auth login` or set `HF_TOKEN` before the model worker starts.
+
+```python
+import vhmodels
+
+with vhmodels.load_model(project="hoptimus0") as model:
+    results = model.embed(input="example_data/H-Optimus-0/TUM-AACHEHDV.tif")
+print(results)  # one 1,536-dimensional embedding for this tile
+```
+
+Inputs must be 224 x 224 H&E tiles extracted at 0.5 microns per pixel. The
+integration accepts one tile, a list of tiles, or a directory of tiles; it does
+not tile or aggregate whole-slide images. The example TIFF's dimensions and
+RGB decoding are checked by the worker, but its physical scale is not encoded
+in a way this integration can verify.
+
 ### Hyformer
 
 ```python
