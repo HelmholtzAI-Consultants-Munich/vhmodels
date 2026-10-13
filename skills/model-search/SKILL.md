@@ -1,6 +1,6 @@
 ---
 name: model-search
-description: Discovers and selects Helmholtz Munich VH CHC embedding models (DinoBloom microscopy, Hyformer molecules/peptides, ProtTrans proteins, MolE SMILES). Use when choosing a model, listing models, comparing modalities, or before embed. Triggers on vhmodels, vh-checker, virtual-human-chc, DinoBloom, Hyformer, ProtTrans, MolE, model zoo, or which model should I use.
+description: Discovers and selects Helmholtz Munich VH CHC embedding models (DinoBloom microscopy, H-Optimus-0 histology, Hyformer molecules/peptides, ProtTrans proteins, MolE antimicrobial activity, Nicheformer spatial transcriptomics). Use when choosing a model, listing models, comparing modalities, or before embed. Triggers on vhmodels, vh-checker, virtual-human-chc, DinoBloom, H-Optimus-0, Hyformer, ProtTrans, MolE, Nicheformer, model zoo, or which model should I use.
 ---
 
 # VH model discovery
@@ -29,14 +29,16 @@ Authoritative registry. Do not hardcode checkpoint names — they change. Option
 | Data | Project | Notes |
 |------|---------|-------|
 | Cell / microscopy images | `dinobloom` | [HF](https://huggingface.co/virtual-human-chc/DinoBloom) |
-| SMILES / molecules | `hyformer` or `mole` | Hyformer: transformer checkpoints. MolE: GIN from `.smiles` file |
+| H&E histology tiles (224x224, 0.5 µm/px) | `hoptimus0` | Gated [HF model](https://huggingface.co/bioptimus/H-optimus-0); needs HF login |
+| SMILES / molecules | `hyformer` or `mole` | Hyformer: transformer checkpoints. MolE: GIN from `chem_name`/`smiles` TSV, plus antimicrobial `predict` |
 | Peptides | `hyformer` | peptide checkpoints |
 | Protein sequences | `prottrans` | [HF collection](https://huggingface.co/collections/virtual-human-chc/prottrans) |
+| Spatial transcriptomics (`.h5ad`) | `nicheformer` | Needs a technology-mean `.npy` |
 
-**Hyformer vs MolE:** Hyformer — broader peptide/molecule tasks. MolE — SMILES-file GIN embeddings. Ask if unclear.
+**Hyformer vs MolE:** Hyformer — broader peptide/molecule tasks. MolE — GIN embeddings and antimicrobial activity prediction. Ask if unclear.
 
 ## Out of scope
 
-Embed, Conda/Apptainer setup → **model-embed**. `predict` / `generate` not in v0.1.
+Embed, Conda/Apptainer setup → **model-embed**. `predict` only for MolE; `generate` not in v0.1.
 
 After project chosen → **model-embed** for `create-env` and `embed`.
