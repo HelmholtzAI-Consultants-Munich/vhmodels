@@ -99,7 +99,7 @@ same model directory.
 
 `sources` describes where your model's resources come from, as one or more
 independently typed entries (`huggingface`, `torch_hub`, `url`, `git`, `local`,
-`python_package` -- see [docs/manifest.md](docs/manifest.md) for the full
+`python_package` -- see [docs/manifest.md](manifest.md) for the full
 field reference). It is validated by Pydantic and resolved for you at load
 time through `vhmodels.models.registry.REGISTRY` and
 `vhmodels.models.source_resolver.SourceResolver`; `model.py` should read
@@ -252,3 +252,7 @@ model = vhmodels.load_model(project='<your_model>')
 results = model.embed(input='example_data/<your_model>/example.data')
 print(results)
 ```
+
+Also add an inference script `examples/<your_model>.py`, following the existing
+scripts, so the model can be run locally and through the
+[HPC job submission](../hpc-job-submit/README.md) workflow.
