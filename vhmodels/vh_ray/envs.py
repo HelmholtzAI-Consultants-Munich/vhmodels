@@ -10,7 +10,7 @@ import subprocess
 import warnings
 from pathlib import Path
 
-from vhmodels.utils.uv_utils import model_uv_spec, uv_build_cache_dir
+from vhmodels.utils.uv_utils import MODEL_PYTHON, model_uv_spec, uv_build_cache_dir
 
 VENV_MARKER = "vhmodels-ray-env.json"
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -99,10 +99,10 @@ def build_model_venv(
             raise FileNotFoundError(f"'{project}' dependency file not found: {path}")
 
     fingerprint = _fingerprint(manifest, repo_root)
-    if spec.python and not fingerprint["python"].startswith(f"{spec.python}."):
+    if not fingerprint["python"].startswith(f"{MODEL_PYTHON}."):
         warnings.warn(
-            f"'{project}' declares Python {spec.python}; "
-            f"building with {fingerprint['python']}."
+            f"Model environments use Python {MODEL_PYTHON}; "
+            f"building '{project}' with the driver's {fingerprint['python']}."
         )
 
     target = venv_dir(project)

@@ -13,7 +13,7 @@ from rich.table import Table
 
 from vhmodels.models.registry import REGISTRY
 from vhmodels.utils import lima_utils
-from vhmodels.utils.uv_utils import model_uv_spec
+from vhmodels.utils.uv_utils import MODEL_PYTHON, model_uv_spec
 from vhmodels.utils.uv_utils import uv_build_cache_dir as _uv_build_cache_dir
 
 
@@ -216,7 +216,6 @@ def create_apptainer_image(project, output):
     template_path = package_dir / "envs" / "Apptainer"
     target_dir = Path(manifest.model_dir)
     uv_spec = model_uv_spec(manifest)
-    python_version = uv_spec.python
     requirements_path = uv_spec.requirements_path
     exclude_path = uv_spec.exclude_path
     torch_backend = uv_spec.torch_backend
@@ -225,7 +224,7 @@ def create_apptainer_image(project, output):
         raise click.ClickException(
             f"Apptainer definition template not found at {template_path}"
         )
-    if not python_version or requirements_path is None:
+    if manifest.runtimes.apptainer is None or requirements_path is None:
         raise click.ClickException(
             f"Apptainer dependency configuration is missing for project '{project}'."
         )
@@ -284,7 +283,7 @@ def create_apptainer_image(project, output):
     replacements = {
         "{project}": project,
         "{model_dir}": target_dir.name,
-        "{python_version}": python_version,
+        "{python_version}": MODEL_PYTHON,
         "{requirements_file}": requirements_path.name,
         "{torch_backend_arg}": (
             f"--torch-backend {torch_backend}" if torch_backend else ""

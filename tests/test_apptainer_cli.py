@@ -113,7 +113,7 @@ def test_create_apptainer_image_renders_and_builds_definition(
     assert "/uv /usr/local/bin/uv" in captured["definition"]
     assert "models/DinoBloom/requirements.linux-x86_64.txt" in captured["definition"]
     assert "vhmodels /opt/vhmodels-src/vhmodels" in captured["definition"]
-    assert '"cpython-3.10-linux-x86_64-gnu"' in captured["definition"]
+    assert '"cpython-3.11-linux-x86_64-gnu"' in captured["definition"]
     assert "--torch-backend cu126" in captured["definition"]
     assert "uv pip install --python /opt/venv/bin/python" in captured["definition"]
     assert (
@@ -152,20 +152,14 @@ def test_create_apptainer_image_renders_and_builds_definition(
 
 
 @pytest.mark.parametrize(
-    ("project", "model_dir", "python_version", "torch_backend", "exclude_file"),
+    ("project", "model_dir", "torch_backend", "exclude_file"),
     [
-        ("dinobloom", "DinoBloom", "3.10", "cu126", None),
-        (
-            "hyformer",
-            "Hyformer",
-            "3.11",
-            "cu118",
-            "requirements-exclude.linux-x86_64.txt",
-        ),
-        ("hoptimus0", "HOptimus0", "3.10", "cu126", None),
-        ("mole", "MolE", "3.10", "cu126", None),
-        ("nicheformer", "Nicheformer", "3.10", "cu126", None),
-        ("prottrans", "ProtTrans", "3.11", None, None),
+        ("dinobloom", "DinoBloom", "cu126", None),
+        ("hyformer", "Hyformer", "cu118", "requirements-exclude.linux-x86_64.txt"),
+        ("hoptimus0", "HOptimus0", "cu126", None),
+        ("mole", "MolE", "cu126", None),
+        ("nicheformer", "Nicheformer", "cu126", None),
+        ("prottrans", "ProtTrans", None, None),
     ],
 )
 def test_create_apptainer_image_uses_model_uv_dependencies(
@@ -173,7 +167,6 @@ def test_create_apptainer_image_uses_model_uv_dependencies(
     tmp_path,
     project,
     model_dir,
-    python_version,
     torch_backend,
     exclude_file,
 ):
@@ -195,7 +188,7 @@ def test_create_apptainer_image_uses_model_uv_dependencies(
 
     assert result.exit_code == 0
     assert f"models/{model_dir}/requirements.linux-x86_64.txt" in captured["definition"]
-    assert f'"cpython-{python_version}-linux-x86_64-gnu"' in captured["definition"]
+    assert '"cpython-3.11-linux-x86_64-gnu"' in captured["definition"]
     if torch_backend is None:
         assert "--torch-backend" not in captured["definition"]
     else:
