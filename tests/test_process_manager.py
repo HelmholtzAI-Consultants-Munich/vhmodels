@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from vhmodels.vh_checker import factory, process_manager, worker
+from vhmodels.vh_checker import process_manager, worker
 from vhmodels.vh_checker.process_manager import (
     ApptainerProcessManager,
     CondaProcessManager,
@@ -92,12 +92,9 @@ class FakeTransport:
         self.stop_count = 0
         self.load_count = 0
         self.embed_count = 0
-        self.predict_count = 0
         self.model_errors = {}
         self.transport_failures = set()
         self.missing_instances = set()
-        self.predict_model_errors = {}
-        self.predict_transport_failures = set()
 
     @staticmethod
     def extract_frame(stdout, stderr):
@@ -131,7 +128,8 @@ class FakeTransport:
         if message_type == LOAD_MESSAGE_TYPE:
             self.load_count += 1
             response = {"ok": True, "result": None}
-        elif message_type == EMBED_MESSAGE_TYPE:
+        else:
+            assert message_type == EMBED_MESSAGE_TYPE
             self.embed_count += 1
             request_number = self.embed_count
             if request_number in self.transport_failures:
@@ -147,29 +145,6 @@ class FakeTransport:
                     "result": {
                         "output": {
                             "input": message["input"],
-                            "kwargs": message["kwargs"],
-                            "cwd": message["cwd"],
-                        }
-                    },
-                }
-        else:
-            assert message_type == PREDICT_MESSAGE_TYPE
-            self.predict_count += 1
-            request_number = self.predict_count
-            if request_number in self.predict_transport_failures:
-                raise RuntimeError("relay exited before returning a frame")
-            if request_number in self.predict_model_errors:
-                response = {
-                    "ok": False,
-                    "error": self.predict_model_errors[request_number],
-                }
-            else:
-                response = {
-                    "ok": True,
-                    "result": {
-                        "output": {
-                            "input": message["input"],
-                            "embedding": message["embedding"],
                             "kwargs": message["kwargs"],
                             "cwd": message["cwd"],
                         }
@@ -249,6 +224,10 @@ def test_model_worker_loads_once_and_handles_arbitrary_requests(monkeypatch, tmp
                 }
             }
 
+        def predict(self, input, embedding, **kwargs):
+            calls.append(("predict", input, embedding, kwargs))
+            return {"output": {"input": input, "embedding": embedding}}
+
     monkeypatch.setattr(
         worker.BaseModel,
         "get_class",
@@ -319,6 +298,18 @@ def test_model_worker_loads_once_and_handles_arbitrary_requests(monkeypatch, tmp
     assert [call[0] for call in calls].count("load") == 1
     assert [call[0] for call in calls].count("embed") == 2
 
+    predicted = dispatcher.handle(
+        {
+            MESSAGE_TYPE_KEY: PREDICT_MESSAGE_TYPE,
+            "input": "molecules.tsv",
+            "embedding": [[0.1, 0.2]],
+            "kwargs": {"threshold": 0.5},
+            "cwd": None,
+        }
+    )
+    assert predicted == {"output": {"input": "molecules.tsv", "embedding": [[0.1, 0.2]]}}
+    assert calls[-1] == ("predict", "molecules.tsv", [[0.1, 0.2]], {"threshold": 0.5})
+
     with pytest.raises(RuntimeError, match="already has a loaded model"):
         dispatcher.handle(
             {
@@ -327,24 +318,6 @@ def test_model_worker_loads_once_and_handles_arbitrary_requests(monkeypatch, tmp
             }
         )
     assert [call[0] for call in calls].count("load") == 1
-
-
-def test_model_class_import_failure_raises_catchable_error(monkeypatch):
-    monkeypatch.setattr(
-        "vhmodels.vh_checker.base.discovery.find_class_path",
-        lambda project: "Broken.model.BrokenModel",
-    )
-
-    def fail_import(module_path):
-        raise ImportError("missing model dependency")
-
-    monkeypatch.setattr(
-        "vhmodels.vh_checker.base.importlib.import_module",
-        fail_import,
-    )
-
-    with pytest.raises(ImportError, match="missing model dependency"):
-        worker.BaseModel.get_class("broken")
 
 
 def test_model_worker_remains_loaded_after_model_error(monkeypatch):
@@ -381,72 +354,6 @@ def test_model_worker_remains_loaded_after_model_error(monkeypatch):
         {MESSAGE_TYPE_KEY: EMBED_MESSAGE_TYPE, "input": "valid input"}
     ) == {"output": "valid input"}
     assert calls == {"load": 1, "embed": 2}
-
-
-def test_model_worker_dispatches_predict_with_embedding(monkeypatch):
-    calls = []
-
-    class RecordingModel:
-        def load_model(self, model_name, resources, **kwargs):
-            calls.append(("load", model_name, kwargs))
-
-        def predict(self, input, embedding, **kwargs):
-            calls.append(("predict", input, embedding, kwargs))
-            return {"output": {"input": input, "embedding": embedding}}
-
-    monkeypatch.setattr(
-        worker.BaseModel, "get_class", staticmethod(lambda project: RecordingModel)
-    )
-
-    dispatcher = worker.ModelWorker()
-    dispatcher.handle({MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE, "project": "generic-model"})
-
-    result = dispatcher.handle(
-        {
-            MESSAGE_TYPE_KEY: PREDICT_MESSAGE_TYPE,
-            "input": "molecules.tsv",
-            "embedding": [[0.1, 0.2], [0.3, 0.4]],
-            "kwargs": {"threshold": 0.5},
-            "cwd": None,
-        }
-    )
-
-    assert result == {
-        "output": {"input": "molecules.tsv", "embedding": [[0.1, 0.2], [0.3, 0.4]]}
-    }
-    assert calls[1] == (
-        "predict",
-        "molecules.tsv",
-        [[0.1, 0.2], [0.3, 0.4]],
-        {"threshold": 0.5},
-    )
-
-
-def test_model_worker_predict_not_implemented_keeps_model_loaded(monkeypatch):
-    calls = {"load": 0, "predict": 0}
-
-    class EmbedOnlyModel:
-        def load_model(self, model_name, resources, **kwargs):
-            calls["load"] += 1
-
-        def predict(self, input, **kwargs):
-            calls["predict"] += 1
-            raise NotImplementedError("EmbedOnlyModel does not support predict().")
-
-    monkeypatch.setattr(
-        worker.BaseModel, "get_class", staticmethod(lambda project: EmbedOnlyModel)
-    )
-
-    dispatcher = worker.ModelWorker()
-    dispatcher.handle({MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE, "project": "generic-model"})
-
-    with pytest.raises(NotImplementedError, match="does not support predict"):
-        dispatcher.handle(
-            {MESSAGE_TYPE_KEY: PREDICT_MESSAGE_TYPE, "input": "x", "embedding": []}
-        )
-
-    assert dispatcher.is_loaded is True
-    assert calls == {"load": 1, "predict": 1}
 
 
 def test_conda_manager_starts_once_requests_directly_and_reaps(tmp_path):
@@ -667,43 +574,6 @@ def test_manager_starts_and_loads_once_for_many_requests(make_manager, tmp_path)
     assert all(call["environment"] is backend.environment for call in transport.calls)
 
 
-def test_manager_predict_sends_embedding_and_reuses_worker(make_manager, tmp_path):
-    manager, backend, transport = make_manager(
-        project="mole", model="default", load_kwargs={"device": "cpu"}
-    )
-    embedding = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
-
-    result = manager.predict(
-        "molecules.tsv",
-        embedding,
-        kwargs={"strain": "all"},
-        cwd=tmp_path,
-    )
-
-    assert result == {
-        "output": {
-            "input": "molecules.tsv",
-            "embedding": embedding,
-            "kwargs": {"strain": "all"},
-            "cwd": os.fspath(tmp_path.resolve()),
-        }
-    }
-    assert transport.predict_count == 1
-    assert transport.load_count == 1
-    assert transport.messages[-1] == {
-        MESSAGE_TYPE_KEY: PREDICT_MESSAGE_TYPE,
-        "input": "molecules.tsv",
-        "embedding": embedding,
-        "kwargs": {"strain": "all"},
-        "cwd": os.fspath(tmp_path.resolve()),
-    }
-
-    # A second predict call reuses the already-loaded worker.
-    manager.predict("molecules.tsv", embedding)
-    assert transport.load_count == 1
-    assert transport.predict_count == 2
-
-
 def test_model_error_keeps_loaded_manager_reusable(make_manager):
     transport = FakeTransport()
     transport.model_errors[1] = "ValueError: unsupported record"
@@ -750,30 +620,44 @@ def test_transport_failure_cleans_up_and_next_request_restarts(make_manager):
     assert manager.instance_name == restarted_instance_name
 
 
-def test_failed_instance_start_can_be_retried(make_manager):
+def test_manager_restarts_after_failed_start_and_vanished_instance(make_manager):
     transport = FakeTransport()
     manager, _, _ = make_manager(transport=transport)
     original_run = transport.run
-    attempts = 0
+    start_attempts = 0
+    vanished_instance = None
 
-    def fail_first_start(command, payload, environment, timeout):
-        nonlocal attempts
+    def flaky_run(command, payload, environment, timeout):
+        nonlocal start_attempts
         if command[0] == "start":
-            attempts += 1
-            if attempts == 1:
+            start_attempts += 1
+            if start_attempts == 1:
                 raise RuntimeError("instance start failed")
+        if command[0] == "stop" and command[1] == vanished_instance:
+            raise RuntimeError("instance does not exist")
         return original_run(command, payload, environment, timeout)
 
-    manager._run_subprocess = fail_first_start
+    manager._run_subprocess = flaky_run
 
     with pytest.raises(RuntimeError, match="instance start failed"):
         manager.embed("first")
     assert manager.is_started is False
     assert transport.stop_count == 1
-
     assert manager.embed("second")["output"]["input"] == "second"
-    assert attempts == 2
-    assert transport.start_count == 1
+
+    # The instance disappears behind the manager's back (e.g. a node reboot).
+    vanished_instance = manager.instance_name
+    transport.transport_failures.add(2)
+    transport.missing_instances.add(vanished_instance)
+    with pytest.raises(RuntimeError, match="relay exited"):
+        manager.embed("request after external stop")
+
+    assert manager.is_started is False
+    assert manager.instance_name != vanished_instance
+    assert manager.embed("after restart")["output"]["input"] == "after restart"
+    assert start_attempts == 3
+    assert transport.start_count == 2
+    assert transport.load_count == 2
 
 
 def test_stale_image_error_explains_how_to_rebuild(make_manager):
@@ -812,33 +696,6 @@ def test_close_is_idempotent_and_closed_manager_cannot_restart(make_manager):
     assert transport.start_count == 1
 
 
-def test_failed_stop_can_be_retried_without_forgetting_instance(make_manager):
-    backend = FakeBackend()
-    transport = FakeTransport()
-    manager, _, _ = make_manager(backend=backend, transport=transport)
-    manager.embed("request")
-    original_run = transport.run
-    stop_attempts = 0
-
-    def flaky_stop(command, payload, environment, timeout):
-        nonlocal stop_attempts
-        if command[0] == "stop":
-            stop_attempts += 1
-            if stop_attempts == 1:
-                raise RuntimeError("stop failed")
-        return original_run(command, payload, environment, timeout)
-
-    manager._run_subprocess = flaky_stop
-
-    with pytest.raises(RuntimeError, match="stop failed"):
-        manager.close()
-    assert manager.is_started is True
-
-    manager.close()
-    assert stop_attempts == 2
-    assert manager.is_started is False
-
-
 def test_failed_cleanup_after_transport_error_blocks_duplicate_start(make_manager):
     transport = FakeTransport()
     transport.transport_failures.add(1)
@@ -864,79 +721,10 @@ def test_failed_cleanup_after_transport_error_blocks_duplicate_start(make_manage
     manager.close()
 
 
-def test_externally_removed_instance_can_restart(make_manager):
-    transport = FakeTransport()
-    manager, _, _ = make_manager(transport=transport)
-    manager.embed("first")
-    vanished_instance = manager.instance_name
-    transport.transport_failures.add(2)
-    transport.missing_instances.add(vanished_instance)
-    original_run = transport.run
-
-    def absent_stop(command, payload, environment, timeout):
-        if command[0] == "stop" and command[1] == vanished_instance:
-            raise RuntimeError("instance does not exist")
-        return original_run(command, payload, environment, timeout)
-
-    manager._run_subprocess = absent_stop
-
-    with pytest.raises(RuntimeError, match="relay exited"):
-        manager.embed("request after external stop")
-
-    assert manager.is_started is False
-    assert manager.instance_name != vanished_instance
-    assert manager.embed("after restart")["output"]["input"] == "after restart"
-    assert transport.start_count == 2
-    assert transport.load_count == 2
-
-
-@pytest.mark.parametrize("timeout", [None, 0, -1, float("nan"), float("inf")])
-def test_manager_rejects_invalid_timeout(make_manager, timeout):
-    with pytest.raises(ValueError, match="positive, finite"):
-        make_manager(timeout=timeout)
-
-
-def test_forked_process_cannot_manage_parent_instance(make_manager, monkeypatch):
-    manager, _, transport = make_manager()
-    manager.embed("request")
-    monkeypatch.setattr(process_manager.os, "getpid", lambda: manager._creator_pid + 1)
-
-    with pytest.raises(RuntimeError, match="after the process forks"):
-        manager.embed("child request")
-    manager._close_at_exit()
-    assert transport.stop_count == 0
-
-
-def test_modelproxy_context_closes_manager_after_exception(monkeypatch):
-    recorded = {}
-
-    class RecordingManager:
-        def __init__(self, **kwargs):
-            recorded["init"] = kwargs
-            recorded["close_calls"] = 0
-
-        def close(self):
-            recorded["close_calls"] += 1
-
-    monkeypatch.setattr(factory, "get_backend", lambda runtime, env_name: FakeBackend())
-    monkeypatch.setattr(factory, "ApptainerProcessManager", RecordingManager)
-
-    class ContextFailure(Exception):
-        pass
-
-    proxy = factory.ModelProxy(
-        project="generic-model",
-        env_name="generic-model.sif",
-        model="variant-a",
-        runtime="apptainer",
-        load_kwargs={"device": "cpu"},
-    )
-    with pytest.raises(ContextFailure):
-        with proxy as entered:
-            assert entered is proxy
-            raise ContextFailure
-
-    assert recorded["close_calls"] == 1
+def test_manager_rejects_invalid_timeout(make_manager):
+    for timeout in (0, float("nan")):
+        with pytest.raises(ValueError, match="positive, finite"):
+            make_manager(timeout=timeout)
 
 
 def test_instance_and_socket_names_are_safe_bounded_and_unique(

@@ -29,5 +29,6 @@ class PersistentFake:
                 "load_kwargs": self.load_kwargs,
                 "input": input,
                 "kwargs": kwargs,
+                "cwd": os.getcwd(),
             }
         }

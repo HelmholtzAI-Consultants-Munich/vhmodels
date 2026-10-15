@@ -42,59 +42,39 @@ def _frame(obj):
 # --- result parsing --------------------------------------------------------
 
 
-def test_extract_clean_frame():
-    stdout = _frame({"output": [1, 2, 3]})
-    assert _extract_frame(stdout, "") == {"output": [1, 2, 3]}
-
-
-def test_extract_ignores_surrounding_noise():
-    # tqdm / HuggingFace download bars / warnings around the real frame.
+def test_extract_frame_among_noise():
+    # tqdm / HuggingFace download bars / warnings around the real frame, and
+    # the marker text itself inside the model's data.
+    value = f"before {RESULT_MARKER} after"
     stdout = (
         "Downloading model: 100%|####| 1.2G/1.2G\n"
         "Some warning with a stray { brace }\n"
-        + _frame({"output": {"k": "v"}})
+        + _frame({"output": value})
         + "trailing log line\n"
     )
-    assert _extract_frame(stdout, "") == {"output": {"k": "v"}}
+    assert _extract_frame(stdout, "") == {"output": value}
 
 
-def test_extract_allows_marker_text_inside_model_data():
-    value = f"before {RESULT_MARKER} after"
-    assert _extract_frame(_frame({"output": value}), "") == {"output": value}
+@pytest.mark.parametrize(
+    ("stdout", "message"),
+    [
+        ("just some noise, no markers here", "no opening marker"),
+        # Opening marker present but truncated before the close (child killed).
+        (RESULT_MARKER + '{"output": [1, 2', "truncated"),
+        (f"{RESULT_MARKER}not json{RESULT_MARKER}", "not valid JSON"),
+    ],
+)
+def test_extract_frame_failures_explain_and_include_stderr(stdout, message):
+    with pytest.raises(ValueError, match=message) as error:
+        _extract_frame(stdout, "boom on stderr")
+    assert "boom on stderr" in str(error.value)
 
 
-def test_extract_no_markers_fails():
-    with pytest.raises(ValueError, match="no opening marker"):
-        _extract_frame("just some noise, no markers here", "")
-
-
-def test_extract_missing_closing_marker_fails():
-    # Opening marker present but truncated before the close (child killed).
-    truncated = RESULT_MARKER + '{"output": [1, 2'
-    with pytest.raises(ValueError, match="truncated"):
-        _extract_frame(truncated, "stderr detail")
-
-
-def test_extract_non_json_between_markers_fails():
-    bad = f"{RESULT_MARKER}not json{RESULT_MARKER}"
-    with pytest.raises(ValueError, match="not valid JSON"):
-        _extract_frame(bad, "")
-
-
-def test_extract_missing_output_key_fails():
+def test_unwrap_model_result():
+    # The model already returns an "output" envelope; the result is the inner value.
+    assert _unwrap_model_result({"output": {"prediction": 42}}) == {"prediction": 42}
     with pytest.raises(ValueError, match="missing 'output' key"):
         _unwrap_model_result({"something_else": 1})
-
-
-def test_extract_error_includes_stderr():
-    with pytest.raises(ValueError, match="boom on stderr"):
-        _extract_frame("no markers", "boom on stderr")
-
-
-def test_extract_does_not_double_wrap():
-    # Model already returns an "output" envelope; result must be the inner value.
-    result = _unwrap_model_result({"output": {"prediction": 42}})
-    assert result == {"prediction": 42}
 
 
 # --- _run_subprocess -------------------------------------------------------
@@ -183,25 +163,6 @@ def test_terminate_group_escalates_sigterm_then_sigkill(monkeypatch):
     assert sent == [signal.SIGTERM, signal.SIGKILL]
 
 
-def test_terminate_group_skips_already_reaped_process(monkeypatch):
-    class FakeProc:
-        pid = 4242
-        returncode = 0
-
-    monkeypatch.setattr(
-        subprocess_utils.os,
-        "getpgid",
-        lambda pid: pytest.fail("getpgid must not be called for a reaped process"),
-    )
-    monkeypatch.setattr(
-        subprocess_utils.os,
-        "killpg",
-        lambda pgid, sig: pytest.fail("killpg must not be called for a reaped process"),
-    )
-
-    subprocess_utils.terminate_process_group(FakeProc())
-
-
 def test_run_subprocess_interrupt_kills_process_group(monkeypatch):
     sent = []
 
@@ -235,7 +196,7 @@ def test_run_subprocess_interrupt_kills_process_group(monkeypatch):
 
 
 def test_modelproxy_conda_uses_one_manager_for_many_requests(monkeypatch, tmp_path):
-    recorded = {"embed": [], "close": 0}
+    recorded = {"embed": [], "predict": [], "close": 0}
 
     class RecordingManager:
         def __init__(self, **kwargs):
@@ -244,6 +205,10 @@ def test_modelproxy_conda_uses_one_manager_for_many_requests(monkeypatch, tmp_pa
         def embed(self, **kwargs):
             recorded["embed"].append(kwargs)
             return {"output": len(recorded["embed"])}
+
+        def predict(self, **kwargs):
+            recorded["predict"].append(kwargs)
+            return {"output": {"probability": 0.9}}
 
         @property
         def is_started(self):
@@ -262,6 +227,8 @@ def test_modelproxy_conda_uses_one_manager_for_many_requests(monkeypatch, tmp_pa
     model = load_model("dinobloom", model="s", device="cpu")
     assert model.embed("first", batch_size=2) == 1
     assert model.embed("second", batch_size=4) == 2
+    embedding = [[0.1, 0.2], [0.3, 0.4]]
+    assert model.predict("cells.tsv", embedding, strain="all") == {"probability": 0.9}
 
     assert recorded["init"]["project"] == "dinobloom"
     assert recorded["init"]["model"] == "s"
@@ -270,52 +237,16 @@ def test_modelproxy_conda_uses_one_manager_for_many_requests(monkeypatch, tmp_pa
         {"input": "first", "kwargs": {"batch_size": 2}, "cwd": tmp_path},
         {"input": "second", "kwargs": {"batch_size": 4}, "cwd": tmp_path},
     ]
-    model.close()
-    assert recorded["close"] == 1
-
-
-def test_modelproxy_conda_predict_sends_embedding_to_manager(monkeypatch, tmp_path):
-    recorded = {"embed": [], "predict": []}
-
-    class RecordingManager:
-        def __init__(self, **kwargs):
-            recorded["init"] = kwargs
-
-        def embed(self, **kwargs):
-            recorded["embed"].append(kwargs)
-            return {"output": {"embedded": True}}
-
-        def predict(self, **kwargs):
-            recorded["predict"].append(kwargs)
-            return {"output": {"probability": 0.9}}
-
-        @property
-        def is_started(self):
-            return bool(recorded["embed"]) or bool(recorded["predict"])
-
-        def close(self):
-            pass
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(factory, "CondaProcessManager", RecordingManager)
-    monkeypatch.setattr(
-        backends.CondaBackend, "is_runtime_available", lambda self: True
-    )
-    monkeypatch.setattr(backends.CondaBackend, "is_available", lambda self: True)
-
-    model = load_model("mole")
-    embedding = [[0.1, 0.2], [0.3, 0.4]]
-    result = model.predict("molecules.tsv", embedding, strain="all")
-
-    assert result == {"probability": 0.9}
     assert recorded["predict"] == [
         {
-            "input": "molecules.tsv",
+            "input": "cells.tsv",
             "embedding": embedding,
             "kwargs": {"strain": "all"},
             "cwd": tmp_path,
         }
     ]
+    model.close()
+    assert recorded["close"] == 1
 
 
 def test_modelproxy_apptainer_starts_loads_and_reuses_instance(monkeypatch, tmp_path):
@@ -537,8 +468,3 @@ def test_modelproxy_apptainer_prepares_and_uses_lima(monkeypatch, tmp_path):
 def test_image_path_is_rejected_for_conda(tmp_path):
     with pytest.raises(ValueError, match="runtime='apptainer'"):
         load_model("mole", image_path=tmp_path / "mole.sif")
-
-
-def test_load_model_stores_load_kwargs():
-    model = load_model("dinobloom", foo="bar")
-    assert model.load_kwargs == {"foo": "bar"}

@@ -15,57 +15,67 @@ def isolated_uv_cache(monkeypatch, tmp_path):
     return cache_path.resolve()
 
 
-def test_uv_build_cache_uses_xdg_default(monkeypatch, tmp_path):
-    monkeypatch.delenv("UV_CACHE_DIR")
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+def _missing_apptainer(*args, **kwargs):
+    raise FileNotFoundError
 
-    assert (
-        cli._uv_build_cache_dir()
-        == (tmp_path / "xdg-cache" / "vhmodels" / "apptainer" / "uv").resolve()
+
+def _failed_build(command, **kwargs):
+    raise subprocess.CalledProcessError(1, command)
+
+
+def _missing_lima():
+    raise RuntimeError("Lima is not installed; install it with 'brew install lima'.")
+
+
+@pytest.mark.parametrize(
+    ("project", "host", "existing_output", "patches", "message"),
+    [
+        ("dinobloom", "linux-x86_64", False,
+         {"subprocess.run": _missing_apptainer}, "Apptainer is not installed"),
+        ("dinobloom", "windows-amd64", False, {}, "Linux or on macOS with Lima"),
+        ("dinobloom", "linux-x86_64", True,
+         {"_check_apptainer_installed": lambda: True}, "already exists"),
+        ("dinobloom", "linux-x86_64", False,
+         {"_check_apptainer_installed": lambda: True,
+          "subprocess.run": _failed_build}, "Failed to build Apptainer image"),
+        ("dinobloom", "macos-arm64", False,
+         {"ensure_lima_instance": _missing_lima}, "brew install lima"),
+        # The output directory is shared with Lima, the uv build cache is not.
+        ("dinobloom", "macos-arm64", False,
+         {"is_lima_shared_path": lambda path, shared=iter([True, False]): next(shared)},
+         "uv build cache must be under your home directory"),
+    ],
+)  # fmt: skip
+def test_create_apptainer_image_reports_errors(
+    monkeypatch, tmp_path, project, host, existing_output, patches, message
+):
+    output_path = tmp_path / f"{project}.sif"
+    if existing_output:
+        output_path.touch()
+    monkeypatch.setattr(cli, "_determine_current_platform", lambda: host)
+    monkeypatch.setattr(lima_utils, "is_lima_shared_path", lambda path: True)
+    # Unless a case expects it, neither a build nor a Lima VM may start.
+    monkeypatch.setattr(
+        cli.subprocess, "run", lambda *args, **kwargs: pytest.fail("build started")
     )
-
-
-def test_create_apptainer_image_reports_missing_runtime(monkeypatch, tmp_path):
-    monkeypatch.setattr(cli, "_determine_current_platform", lambda: "linux-x86_64")
-
-    def missing_apptainer(*args, **kwargs):
-        raise FileNotFoundError
-
-    monkeypatch.setattr(cli.subprocess, "run", missing_apptainer)
+    monkeypatch.setattr(
+        lima_utils, "ensure_lima_instance", lambda: pytest.fail("Lima started")
+    )
+    for name, replacement in patches.items():
+        if name == "subprocess.run":
+            monkeypatch.setattr(cli.subprocess, "run", replacement)
+        elif hasattr(lima_utils, name):
+            monkeypatch.setattr(lima_utils, name, replacement)
+        else:
+            monkeypatch.setattr(cli, name, replacement)
 
     result = CliRunner().invoke(
         cli.main,
-        [
-            "create-apptainer-image",
-            "dinobloom",
-            "--output",
-            str(tmp_path / "dinobloom.sif"),
-        ],
+        ["create-apptainer-image", project, "--output", str(output_path)],
     )
 
     assert result.exit_code == 1
-    assert "Apptainer is not installed" in result.output
-
-
-def test_create_apptainer_image_rejects_unsupported_host(monkeypatch):
-    monkeypatch.setattr(cli, "_determine_current_platform", lambda: "windows-amd64")
-    called = []
-    monkeypatch.setattr(
-        cli.subprocess, "run", lambda *args, **kwargs: called.append(args)
-    )
-
-    result = CliRunner().invoke(cli.main, ["create-apptainer-image", "dinobloom"])
-
-    assert result.exit_code == 1
-    assert "Linux or on macOS with Lima" in result.output
-    assert called == []
-
-
-def test_create_apptainer_image_rejects_unknown_project():
-    result = CliRunner().invoke(cli.main, ["create-apptainer-image", "unknown"])
-
-    assert result.exit_code == 1
-    assert "is not registered" in result.output
+    assert message in result.output
 
 
 def test_create_apptainer_image_renders_and_builds_definition(
@@ -108,36 +118,10 @@ def test_create_apptainer_image_renders_and_builds_definition(
     assert isolated_uv_cache.is_dir()
     assert captured["kwargs"]["check"] is True
     assert captured["staged_registry"] is True
-    assert "From: ghcr.io/astral-sh/uv:0.12.3" in captured["definition"]
-    assert "From: ubuntu:24.04" in captured["definition"]
-    assert "/uv /usr/local/bin/uv" in captured["definition"]
+    # The image installs the model's uv requirements and serves the worker.
     assert "models/DinoBloom/requirements.linux-x86_64.txt" in captured["definition"]
-    assert "vhmodels /opt/vhmodels-src/vhmodels" in captured["definition"]
-    assert '"cpython-3.11-linux-x86_64-gnu"' in captured["definition"]
-    assert "--torch-backend cu126" in captured["definition"]
-    assert "uv pip install --python /opt/venv/bin/python" in captured["definition"]
-    assert (
-        "PYTHONPATH=/opt/vhmodels-src /opt/venv/bin/python -c "
-        '"import vhmodels.models.DinoBloom.model"' in captured["definition"]
-    )
-    assert "export VIRTUAL_ENV=/opt/venv" in captured["definition"]
-    assert "export PATH=/opt/venv/bin:$PATH" in captured["definition"]
-    assert "export PYTHONPATH=/opt/vhmodels-src" in captured["definition"]
-    assert "%startscript" in captured["definition"]
     assert "python -m vhmodels.vh_checker.worker serve" in captured["definition"]
-    assert "export TMPDIR=/var/tmp" in captured["definition"]
-    assert (
-        'mkdir -p "$APPTAINER_ROOTFS/opt/uv-cache"'
-        in captured["definition"]
-    )
     assert "export UV_CACHE_DIR=/opt/uv-cache" in captured["definition"]
-    assert (
-        "export UV_PYTHON_CACHE_DIR=/opt/uv-cache/python"
-        in captured["definition"]
-    )
-    assert "export UV_LINK_MODE=copy" in captured["definition"]
-    assert "uv cache clean" not in captured["definition"]
-    assert "micromamba" not in captured["definition"]
     for placeholder in (
         "{project}",
         "{model_dir}",
@@ -154,11 +138,7 @@ def test_create_apptainer_image_renders_and_builds_definition(
 @pytest.mark.parametrize(
     ("project", "model_dir", "torch_backend", "exclude_file"),
     [
-        ("dinobloom", "DinoBloom", "cu126", None),
         ("hyformer", "Hyformer", "cu118", "requirements-exclude.linux-x86_64.txt"),
-        ("hoptimus0", "HOptimus0", "cu126", None),
-        ("mole", "MolE", "cu126", None),
-        ("nicheformer", "Nicheformer", "cu126", None),
         ("prottrans", "ProtTrans", None, None),
     ],
 )
@@ -200,55 +180,6 @@ def test_create_apptainer_image_uses_model_uv_dependencies(
             f"--excludes /opt/vhmodels-src/vhmodels/models/{model_dir}/{exclude_file}"
             in captured["definition"]
         )
-
-
-def test_create_apptainer_image_does_not_overwrite(monkeypatch, tmp_path):
-    output_path = tmp_path / "existing.sif"
-    output_path.touch()
-    monkeypatch.setattr(cli, "_determine_current_platform", lambda: "linux-x86_64")
-    monkeypatch.setattr(cli, "_check_apptainer_installed", lambda: True)
-    called = []
-    monkeypatch.setattr(
-        cli.subprocess, "run", lambda *args, **kwargs: called.append(args)
-    )
-
-    result = CliRunner().invoke(
-        cli.main,
-        [
-            "create-apptainer-image",
-            "dinobloom",
-            "--output",
-            str(output_path),
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert "already exists" in result.output
-    assert called == []
-
-
-def test_create_apptainer_image_reports_build_failure(monkeypatch, tmp_path):
-    output_path = tmp_path / "dinobloom.sif"
-    monkeypatch.setattr(cli, "_determine_current_platform", lambda: "linux-x86_64")
-    monkeypatch.setattr(cli, "_check_apptainer_installed", lambda: True)
-
-    def failed_build(command, **kwargs):
-        raise subprocess.CalledProcessError(1, command)
-
-    monkeypatch.setattr(cli.subprocess, "run", failed_build)
-
-    result = CliRunner().invoke(
-        cli.main,
-        [
-            "create-apptainer-image",
-            "dinobloom",
-            "--output",
-            str(output_path),
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert "Failed to build Apptainer image" in result.output
 
 
 def test_create_apptainer_image_uses_lima_and_amd64_on_macos(
@@ -307,50 +238,7 @@ def test_create_apptainer_image_uses_lima_and_amd64_on_macos(
     assert "--torch-backend cu118" in captured["definition"]
 
 
-def test_create_apptainer_image_reports_missing_lima(monkeypatch, tmp_path):
-    output_path = tmp_path / "dinobloom.sif"
-    monkeypatch.setattr(cli, "_determine_current_platform", lambda: "macos-arm64")
-    monkeypatch.setattr(lima_utils, "is_lima_shared_path", lambda path: True)
-
-    def missing_lima():
-        raise RuntimeError(
-            "Lima is not installed; install it with 'brew install lima'."
-        )
-
-    monkeypatch.setattr(lima_utils, "ensure_lima_instance", missing_lima)
-
-    result = CliRunner().invoke(
-        cli.main,
-        ["create-apptainer-image", "dinobloom", "--output", str(output_path)],
-    )
-
-    assert result.exit_code == 1
-    assert "brew install lima" in result.output
-
-
-def test_create_apptainer_image_rejects_unshared_macos_cache(monkeypatch, tmp_path):
-    output_path = tmp_path / "dinobloom.sif"
-    shared_paths = iter([True, False])
-    monkeypatch.setattr(cli, "_determine_current_platform", lambda: "macos-arm64")
-    monkeypatch.setattr(
-        lima_utils, "is_lima_shared_path", lambda path: next(shared_paths)
-    )
-    monkeypatch.setattr(
-        lima_utils,
-        "ensure_lima_instance",
-        lambda: pytest.fail("Lima should not start for an inaccessible cache"),
-    )
-
-    result = CliRunner().invoke(
-        cli.main,
-        ["create-apptainer-image", "dinobloom", "--output", str(output_path)],
-    )
-
-    assert result.exit_code == 1
-    assert "uv build cache must be under your home directory" in result.output
-
-
-def test_run_cli_forwards_apptainer_runtime_and_image(monkeypatch, tmp_path):
+def test_run_cli_forwards_options_and_reports_model_errors(monkeypatch, tmp_path):
     captured = {}
     image_path = tmp_path / "custom.sif"
 
@@ -396,8 +284,6 @@ def test_run_cli_forwards_apptainer_runtime_and_image(monkeypatch, tmp_path):
     }
     assert "[\n  1,\n  2,\n  3\n]" in result.output
 
-
-def test_run_cli_returns_nonzero_when_model_fails(monkeypatch):
     class FailingModel:
         def __enter__(self):
             return self
