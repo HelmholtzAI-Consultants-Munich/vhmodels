@@ -1,5 +1,4 @@
 setuptools
-pydantic
 numpy==1.26.4
 pandas==1.5.3
 scipy==1.11.4

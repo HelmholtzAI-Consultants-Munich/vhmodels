@@ -34,8 +34,8 @@ class BaseModel(ABC):
             raise ImportError(f"Error loading class {class_path}: {error}") from error
 
     @abstractmethod
-    def load_model(self, model, **kwargs):
-        pass
+    def load_model(self, model, resources, **kwargs):
+        """Load ``model`` (a variant) from host-resolved ``resources`` ({name: dict})."""
 
     @abstractmethod
     def embed(self, input, **kwargs):

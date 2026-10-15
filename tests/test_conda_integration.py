@@ -15,6 +15,7 @@ import uuid
 
 import pytest
 
+from vhmodels.models.registry import Registry
 from vhmodels.vh_checker import factory
 
 
@@ -128,6 +129,8 @@ def test_persistent_conda_worker_reuse_cleanup_and_restart(
     # Keep the worker's startup cwd outside this checkout so the staged package
     # in the temporary environment is the one it imports.
     monkeypatch.chdir(runtime_directory)
+    # The host resolves the fixture's manifest before starting the worker.
+    monkeypatch.setattr(factory, "_registry", Registry(models_dir=_FIXTURE_ROOT.parent))
 
     model = factory.ModelProxy(
         project=_PROJECT,
@@ -155,6 +158,7 @@ def test_persistent_conda_worker_reuse_cleanup_and_restart(
             assert first["pid"] == second["pid"]
             assert [first["embed_count"], second["embed_count"]] == [1, 2]
             assert first["model"] == "tiny-variant"
+            assert first["resources"] == {}
             assert first["load_kwargs"] == {"sentinel": "forwarded-load-kwarg"}
             assert first["kwargs"] == {"batch_size": 2}
             assert second["kwargs"] == {"normalize": True}
