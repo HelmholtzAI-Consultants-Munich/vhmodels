@@ -137,6 +137,24 @@ def test_model_code_leaves_resolution_to_the_host(model_file):
     assert not imported & forbidden
 
 
+def test_ray_actor_and_envs_stay_dependency_free():
+    # The actor module is imported inside every model venv, and Ray is an
+    # optional extra: neither it nor `import vhmodels` may load ray/pydantic.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import vhmodels, vhmodels.vh_ray.actor, "
+            "vhmodels.vh_ray.envs; "
+            "loaded = {'pydantic', 'ray'} & set(sys.modules); "
+            "assert not loaded, loaded",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_discover_finds_real_models():
     discovered = discovery.discover()
     assert set(_REAL_MODELS) <= set(discovered)
