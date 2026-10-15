@@ -31,7 +31,9 @@ def test_registry_declares_all_variants():
 @pytest.mark.parametrize("variant", sorted(_VARIANTS))
 def test_hyformer_embed_inference(variant):
     inputs, dim = _VARIANTS[variant]
-    with vhmodels.load_model(project="hyformer", model=variant) as model:
+    with vhmodels.load_model(
+        project="hyformer", model=variant, runtime="ray"
+    ) as model:
         result = model.embed(input=inputs, batch_size=2)
     assert len(result) == len(inputs)
     assert all(len(row) == dim for row in result)

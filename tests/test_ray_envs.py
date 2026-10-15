@@ -1,5 +1,7 @@
-"""Unit tests for the Ray runtime's model venvs; none of them need Ray."""
+"""Unit tests for the Ray runtime: model venvs, actor and options; none need Ray."""
 
+import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -10,8 +12,9 @@ from click.testing import CliRunner
 from vhmodels.models.registry import REGISTRY
 from vhmodels.utils.uv_utils import UvSpec, model_uv_spec
 from vhmodels.vh_checker import cli, factory
-from vhmodels.vh_ray import envs
-from vhmodels.vh_ray.actor import hide_paths
+from vhmodels.vh_checker.base import BaseModel
+from vhmodels.vh_ray import client, envs
+from vhmodels.vh_ray.actor import ModelActor, hide_paths
 
 _VERSIONS = {"python": "3.11.15", "ray": "2.59.0"}
 
@@ -77,6 +80,10 @@ def test_build_model_venv_reuses_and_rebuilds(monkeypatch, tmp_path):
     envs.build_model_venv("prottrans", manifest, run=fake_uv)
     assert target == (tmp_path / "venvs" / "prottrans").resolve()
     assert len(fake_uv.commands) == 4
+    # Ray runs the actor with the interpreter the requirements went into.
+    install = fake_uv.commands[1]
+    python = install[install.index("--python") + 1]
+    assert envs.model_runtime_env("prottrans") == {"py_executable": python}
 
     monkeypatch.setattr(envs, "driver_versions", lambda: {**_VERSIONS, "ray": "2.60.0"})
     envs.build_model_venv("prottrans", manifest, run=fake_uv)
@@ -128,8 +135,6 @@ def test_create_ray_env_cli(monkeypatch):
 
 
 def test_load_model_checks_venv_and_resolves_on_the_host(monkeypatch):
-    from vhmodels.vh_ray import client
-
     created, checked = [], []
     resources = {"weights": {"type": "huggingface", "repo_id": "r", "files": {}}}
     monkeypatch.setattr(
@@ -178,3 +183,66 @@ def test_hide_paths_removes_driver_directories(monkeypatch, tmp_path):
     hide_paths([str(script_dir), str(tmp_path)])
 
     assert sys.path == ["/venv/lib"]
+
+
+@pytest.mark.parametrize(
+    ("device", "num_gpus"), [("cuda:1", 1), ("auto", 0)]
+)
+def test_actor_options_request_a_gpu_for_cuda_devices(device, num_gpus):
+    options = client._actor_options("prottrans", {"device": device})
+
+    assert options["num_gpus"] == num_gpus
+    assert options["runtime_env"] == envs.model_runtime_env("prottrans")
+
+
+def test_ray_options_override_actor_defaults():
+    options = client._actor_options(
+        "prottrans", {"device": "cuda"}, {"num_gpus": 2, "num_cpus": 4}
+    )
+
+    assert options["num_gpus"] == 2
+    assert options["num_cpus"] == 4
+
+
+def _persistent_fake():
+    path = Path(__file__).parent / "fixtures" / "persistent_worker" / "model.py"
+    spec = importlib.util.spec_from_file_location("persistent_fake_model", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.PersistentFake
+
+
+def test_model_actor_serves_the_model_like_a_worker(monkeypatch, tmp_path):
+    # ModelActor is a plain class, so the real fixture model runs in-process.
+    monkeypatch.setattr(
+        BaseModel, "get_class", staticmethod(lambda project: _persistent_fake())
+    )
+    driver_dir = tmp_path / "driver"
+    driver_dir.mkdir()
+    monkeypatch.setattr(sys, "path", [str(driver_dir), *sys.path])
+    request_dir = tmp_path / "request"
+    request_dir.mkdir()
+    caller_cwd = os.getcwd()
+
+    actor = ModelActor(
+        "persistent-fake",
+        "tiny-variant",
+        {"weights": {"type": "local", "path": "/weights"}},
+        {"device": "cpu"},
+        [str(driver_dir)],
+    )
+    first = actor.embed(["a"], cwd=str(request_dir), batch_size=2)["output"]
+    second = actor.embed(["b"])["output"]
+
+    assert str(driver_dir) not in sys.path
+    assert first["model"] == "tiny-variant"
+    assert first["resources"] == {"weights": {"type": "local", "path": "/weights"}}
+    assert first["load_kwargs"] == {"device": "cpu"}
+    assert first["kwargs"] == {"batch_size": 2}
+    assert os.path.realpath(first["cwd"]) == os.path.realpath(request_dir)
+    assert second["cwd"] == os.getcwd() == caller_cwd
+    assert first["load_id"] == second["load_id"]
+    assert [first["embed_count"], second["embed_count"]] == [1, 2]
+    # PersistentFake has no predict(); the model's own error surfaces.
+    with pytest.raises(AttributeError, match="predict"):
+        actor.predict("anything")

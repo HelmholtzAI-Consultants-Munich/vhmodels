@@ -18,16 +18,10 @@ class _FakeTorch:
         return f"device:{value}"
 
 
-def test_auto_selects_cuda_when_available():
+def test_resolve_torch_device():
     assert resolve_torch_device(_FakeTorch(True)) == "device:cuda:0"
-
-
-def test_auto_selects_cpu_without_cuda():
     assert resolve_torch_device(_FakeTorch(False)) == "device:cpu"
-
-
-def test_explicit_device_is_preserved():
+    # An explicit device is preserved.
     torch = _FakeTorch(True)
-
     assert resolve_torch_device(torch, "cpu") == "device:cpu"
     assert resolve_torch_device(torch, "cuda:1") == "device:cuda:1"

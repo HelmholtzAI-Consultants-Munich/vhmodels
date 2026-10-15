@@ -16,6 +16,16 @@ def _driver_paths():
     return paths
 
 
+def _actor_options(project, load_kwargs, ray_options=None):
+    """Run the actor in the model's venv, on a GPU for CUDA devices."""
+    gpu = str(load_kwargs.get("device", "auto")).startswith("cuda")
+    return {
+        "num_gpus": 1 if gpu else 0,
+        "runtime_env": model_runtime_env(project),
+        **(ray_options or {}),
+    }
+
+
 class RayModel:
     """``ModelProxy``-compatible handle to a model running as a Ray actor."""
 
@@ -36,15 +46,9 @@ class RayModel:
         self.model = model
         self.timeout = timeout
         load_kwargs = load_kwargs or {}
-        gpu = str(load_kwargs.get("device", "auto")).startswith("cuda")
-        options = {
-            "num_gpus": 1 if gpu else 0,
-            "runtime_env": model_runtime_env(project),
-            **(ray_options or {}),
-        }
         self.actor = (
             ray.remote(ModelActor)
-            .options(**options)
+            .options(**_actor_options(project, load_kwargs, ray_options))
             .remote(project, model, resources, load_kwargs, _driver_paths())
         )
 
