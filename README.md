@@ -68,6 +68,26 @@ elsewhere. The CLI equivalent is
 Set `APPTAINER_NV=1` when running directly on an NVIDIA Linux/HPC host to expose
 its GPU to the container. The Lima path on macOS is CPU-only.
 
+### Ray runtime (experimental)
+
+`runtime="ray"` runs the model as a Ray actor inside a per-model uv venv built
+from the same dependency spec as the Apptainer image. It needs uv on the host
+and a Python 3.11 driver environment with `vhmodels[ray]`:
+
+```bash
+uv venv --managed-python --python 3.11 .venv
+uv pip install --python .venv/bin/python -e ".[cli,ray]"
+.venv/bin/vh-checker create-ray-env hyformer
+```
+
+```python
+model = vhmodels.load_model(
+    project="hyformer", model="hyformer_molecules_8M", runtime="ray"
+)
+```
+
+See [docs/ray.md](docs/ray.md) for details, Slurm usage and the roadmap.
+
 ### Example scripts
 
 The repository-level [`test.py`](test.py) runs the Nicheformer example, matching
@@ -218,8 +238,8 @@ vhmodels
 ├───.claude-plugin # Plugin/marketplace metadata for the AI skills
 ├───docs # Manifest reference and model contribution guide
 ├───example_data # Example inputs per model
-├───examples # Example inference scripts (local or HPC)
-├───hpc-job-submit # Slurm scripts + config template for Apptainer on HPC
+├───examples # Example inference scripts (local or HPC); ray/ for the Ray runtime
+├───hpc-job-submit # Slurm scripts + config template for Apptainer and Ray on HPC
 ├───skills # AI agent skills (model-search, model-embed)
 ├───tests # Unit and integration tests
 └───vhmodels
@@ -236,5 +256,6 @@ vhmodels
     │   ├───source_resolver.py # turns manifest sources into local paths
     │   └───discovery.py # dependency-free class_path lookup for workers
     ├───utils # Utility functions
-    └───vh_checker # CLI + base model interface
+    ├───vh_checker # CLI + base model interface
+    └───vh_ray # Ray runtime: model venvs, actor, client
 ```
