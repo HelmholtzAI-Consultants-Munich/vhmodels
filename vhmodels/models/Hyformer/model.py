@@ -1,6 +1,4 @@
 from vhmodels.vh_checker.base import BaseModel
-from vhmodels.models.registry import REGISTRY
-from vhmodels.models.source_resolver import SourceResolver
 from vhmodels.utils.device import resolve_torch_device
 
 from pathlib import Path
@@ -29,7 +27,7 @@ class Hyformer(BaseModel):
         self.device = None
         self.variant = None
 
-    def load_model(self, model=None, seed=1337, **kwargs):
+    def load_model(self, model, resources, seed=1337, **kwargs):
         """
         Downloads and loads the artifacts for the specified model. The available models are:
         - hyformer_molecules_8M
@@ -65,10 +63,7 @@ class Hyformer(BaseModel):
             )
         self.variant = model
 
-        manifest = REGISTRY.resolve(self.PROJECT, model)
-        weights = SourceResolver().resolve(manifest.sources, manifest.model_dir)[
-            "weights"
-        ]
+        weights = resources["weights"]
 
         self.device = resolve_torch_device(torch, kwargs.get("device", "auto"))
 
@@ -87,18 +82,18 @@ class Hyformer(BaseModel):
 
         set_seed(seed)
 
-        with open(weights.files["tokenizer_config"], "r") as f:
+        with open(weights["files"]["tokenizer_config"], "r") as f:
             tok_config_data = json.load(f)
 
         # Inject the absolute path so the tokenizer finds vocab.txt in the cache
-        tok_config_data["path_to_vocabulary"] = str(weights.files["vocab"])
+        tok_config_data["path_to_vocabulary"] = str(weights["files"]["vocab"])
 
         tokenizer = AutoTokenizer.from_config(TokenizerConfig.from_dict(tok_config_data))
 
         model = AutoModel.from_config(
-            ModelConfig.from_config_file(weights.files["model_config"])
+            ModelConfig.from_config_file(weights["files"]["model_config"])
         )
-        model.load_pretrained(weights.files["checkpoint"])
+        model.load_pretrained(weights["files"]["checkpoint"])
 
         return tokenizer, model
 
@@ -111,18 +106,18 @@ class Hyformer(BaseModel):
 
         set_seed(seed)
 
-        with open(weights.files["tokenizer_config"], "r") as f:
+        with open(weights["files"]["tokenizer_config"], "r") as f:
             tok_config_data = json.load(f)
 
         # Inject the absolute path so the tokenizer finds vocab.txt in the cache
-        tok_config_data["vocabulary_path"] = str(weights.files["vocab"])
+        tok_config_data["vocabulary_path"] = str(weights["files"]["vocab"])
 
         tokenizer = AutoTokenizer.from_config(TokenizerConfig(**tok_config_data))
 
         # from_pretrained reads model_config.json and ckpt.pt from the local
         # snapshot directory the resolver already downloaded.
         model = AutoModel.from_pretrained(
-            str(Path(weights.files["checkpoint"]).parent)
+            str(Path(weights["files"]["checkpoint"]).parent)
         )
 
         return tokenizer, model
@@ -169,16 +164,3 @@ class Hyformer(BaseModel):
 
     def generate(self, input, **kwargs):
         pass
-
-
-if __name__ == "__main__":
-    model = Hyformer()
-    model.load_model("hyformer_molecules_50M")
-    results = model.embed(
-        input=[
-            "CCCOc1cccc(-c2nn(-c3ccccc3)cc2/C=C(/C#N)C2=[N+]c3ccccc3[N-]2)c1 O=C(c1ccccc1)c1cc([N+](=O)O)c(Sc2c([N+](=O)O)cc([N+](=O)O)cc2[N+](=O)O)cc1[N+](=O)O",
-            "Nc1ncc(CN2CCC3(CC2)C[C@H](c2ccccc2)CN(C2CC2)C3)cn1 O=C(c1ccco1)N(Cc1ccccc1Cl)C[C@@H]1CC(c2ccc(Cl)o2)=NO1",
-            "O=C(c1cccc(/N=C(\\O)CCc2ccccc2)c1)[N+]1CCCCC1",
-        ]
-    )
-    print(results)

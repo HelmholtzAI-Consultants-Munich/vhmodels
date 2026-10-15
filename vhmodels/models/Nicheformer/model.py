@@ -3,8 +3,6 @@ import numpy as np
 import torch
 from transformers import AutoModelForMaskedLM, AutoTokenizer
 
-from vhmodels.models.registry import REGISTRY
-from vhmodels.models.source_resolver import SourceResolver
 from vhmodels.utils.device import resolve_torch_device
 from vhmodels.vh_checker.base import BaseModel
 
@@ -18,19 +16,16 @@ class Nicheformer(BaseModel):
         self.tokenizer = None
         self.device = None
 
-    def load_model(self, model=None, **kwargs):
+    def load_model(self, model, resources, **kwargs):
         """Load the Nicheformer model and tokenizer from Hugging Face."""
-        manifest = REGISTRY.resolve(self.PROJECT, model or "default")
-        weights = SourceResolver().resolve(
-            manifest.sources, manifest.model_dir
-        )["weights"]
+        weights = resources["weights"]
 
         self.device = resolve_torch_device(torch, kwargs.get("device", "auto"))
         self.model = AutoModelForMaskedLM.from_pretrained(
-            weights.repo_id, trust_remote_code=True
+            weights["repo_id"], trust_remote_code=True
         ).to(self.device)
         self.tokenizer = AutoTokenizer.from_pretrained(
-            weights.repo_id, trust_remote_code=True
+            weights["repo_id"], trust_remote_code=True
         )
         self.model.eval()
 

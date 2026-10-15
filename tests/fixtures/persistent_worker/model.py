@@ -8,10 +8,11 @@ import uuid
 class PersistentFake:
     """Echo requests while exposing state that changes only on model load."""
 
-    def load_model(self, model=None, **kwargs):
+    def load_model(self, model, resources, **kwargs):
         self.load_id = uuid.uuid4().hex
         self.embed_count = 0
         self.model_name = model
+        self.resources = resources
         self.load_kwargs = kwargs
 
     def embed(self, input, **kwargs):
@@ -24,6 +25,7 @@ class PersistentFake:
                 "pid": os.getpid(),
                 "embed_count": self.embed_count,
                 "model": self.model_name,
+                "resources": self.resources,
                 "load_kwargs": self.load_kwargs,
                 "input": input,
                 "kwargs": kwargs,

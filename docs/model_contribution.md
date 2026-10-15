@@ -147,11 +147,9 @@ syntax. Keep its Python and package versions consistent with the Conda file.
 The shared definition starts from Ubuntu 24.04, installs these requirements with
 uv, and stores the finished environment at `/opt/venv`. uv is supplied by the
 image build; contributors and users do not need it on the host. If a model needs
-additional Ubuntu packages, add them to `vhmodels/envs/Apptainer`. Include
-`pydantic`: unlike the Conda path (which gets it from `vhmodels`' own
-dependencies via `pip install -e`), the Apptainer image only copies the
-`vhmodels` source and installs this file, so `pydantic` must be listed
-explicitly for `model.py` to resolve its manifest.
+additional Ubuntu packages, add them to `vhmodels/envs/Apptainer`. List only
+what the model itself needs. Manifest validation and downloads run on the host,
+so do not add `pydantic` or other `vhmodels` host dependencies.
 
 - `requirements-exclude.linux-x86_64.txt` (optional)
 
@@ -169,8 +167,6 @@ easily used in `vhmodels`.
 
 ```python
 from vhmodels.vh_checker.base import BaseModel
-from vhmodels.models.registry import REGISTRY
-from vhmodels.models.source_resolver import SourceResolver
 
 
 class YourModel(BaseModel):
@@ -179,22 +175,11 @@ class YourModel(BaseModel):
     def __init__(self):
         self.model = None
 
-    def load_model(self, model=None, **kwargs):
-        """
-        Loads the necessary artifacts for YourModel from the sources declared
-        in model.json / manifests/<variant>.json.
-
-        Returns
-        -------
-        None
-        """
-        manifest = REGISTRY.resolve(self.PROJECT, model)
-        resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
-
-        # `resources["weights"]` is a ResolvedHuggingFace with .repo_id and,
-        # for sources that declare "files", a .files dict of downloaded
-        # local paths -- see docs/manifest.md. Use it to load the model onto
-        # the correct device; add your tokenizer here too if necessary.
+    def load_model(self, model, resources, **kwargs):
+        """Load the variant ``model`` from the host-resolved ``resources``."""
+        # resources["weights"] is e.g. {"repo_id": ..., "files": {"checkpoint": "/path"}};
+        # the host resolves and downloads them (see docs/manifest.md). Never
+        # import the registry or SourceResolver here.
 
     def embed(self, input, **kwargs):
         """
@@ -228,12 +213,6 @@ class YourModel(BaseModel):
     def generate(self, input, **kwargs):
         pass
 
-
-if __name__ == "__main__":
-    model = YourModel()
-    model.load_model()
-    result = model.embed("example_data/YourModel/example.data")
-    print(result)
 ```
 
 ## Step 4: add example data

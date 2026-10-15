@@ -129,11 +129,28 @@ one, or `resolve()` raises with the list of valid ids.
 ## Downloading: SourceResolver
 
 `vhmodels/models/source_resolver.py`'s `SourceResolver.resolve(sources, model_dir)`
-turns a `ResolvedManifest.sources` dict into a dict of small `Resolved*`
-objects (`ResolvedHuggingFace`, `ResolvedTorchHub`, ...) with plain attributes
-— local `Path`s where something was downloaded, repo ids/revisions where
-nothing needed to be. This is the one place that calls `hf_hub_download`;
-model code no longer does it independently per model.
+turns a `ResolvedManifest.sources` dict into plain, JSON-safe dicts, one per
+source name:
+
+| Source type | Resolved dict |
+| --- | --- |
+| `huggingface` | `{"type", "repo_id", "revision", "files": {name: path}}`; `files` is empty when the source declares none |
+| `torch_hub` | `{"type", "repo", "revision", "entrypoint"}` |
+| `url` | `{"type", "path", "sha256"}` |
+| `git` | `{"type", "path", "revision"}` |
+| `local` | `{"type", "path"}` |
+| `python_package` | `{"type", "name", "version"}` |
+
+Paths are strings. `url` and `git` sources are cached under the host's temp
+directory, so on a cluster set `TMPDIR` to shared storage.
+
+`hf_hub_download` is called in exactly one place, here. `python_package`
+sources are passed through without importing them, because the package
+exists only in the model environment; the environment build's smoke import
+checks it.
+
+`Registry.resolve_resources(project, variant)` combines both steps and returns
+`(variant, resources)`. It always runs on the host.
 
 ## Why the worker stays dependency-free
 
@@ -148,39 +165,46 @@ plumbing in isolation from any model's dependencies.
 That means `base.py` cannot depend on Pydantic just to look up a
 `class_path`. It uses `vhmodels/models/discovery.py` instead — a
 standard-library-only module that reads `model.json` with plain `json.load`
-for exactly that one field. The full, Pydantic-validated `Registry` (and
-`SourceResolver`, and the schema) is only imported:
+for exactly that one field.
 
-- host-side, by the CLI and by `vh_checker.factory.load_model()` (lazily, so
-  merely `import vhmodels` — which every worker does — never pulls in
-  Pydantic), and
-- by each real model's own `model.py`, which already depends on `torch` /
-  `transformers` / `huggingface_hub` and now also lists `pydantic` in its
-  `requirements.<platform>.txt` (Apptainer) — the Conda path gets it for free
-  since it's a `vhmodels` package dependency, installed via `pip install -e`.
+The full, Pydantic-validated `Registry`, `SourceResolver` and the schema are
+imported only on the host: by the CLI and, lazily, by
+`vh_checker.factory.load_model()`. Merely `import vhmodels`, which every worker
+does, never pulls in Pydantic. Model code never imports them either, so model
+environments contain neither Pydantic nor the download logic:
 
-`tests/test_manifest.py::test_discovery_has_no_third_party_imports` and
-`::test_base_and_worker_stay_dependency_free` assert this boundary directly by
-importing those modules in a subprocess and checking `pydantic` never lands in
-`sys.modules`.
+- the requirements files do not list `pydantic`;
+- Conda environments and Ray venvs install `vhmodels` with `--no-deps`;
+- Apptainer images only put the source on `PYTHONPATH`.
+
+`huggingface_hub` is a host dependency of `vhmodels`, because the host
+performs the downloads.
+
+`tests/test_manifest.py` enforces this boundary in three ways:
+
+- `::test_discovery_has_no_third_party_imports` and
+  `::test_base_and_worker_stay_dependency_free` import those modules in a
+  subprocess and check that `pydantic` never lands in `sys.modules`;
+- `::test_model_code_leaves_resolution_to_the_host` checks that no `model.py`
+  imports the registry, the resolver or Pydantic.
 
 ## How model.py uses it
 
-The wire protocol between the host and a worker is unchanged: `load_model`
-still just takes a variant string and keyword arguments. Each model's
-`load_model` resolves its own manifest and sources at the top:
+The host resolves the manifest and sources, then hands the result to the worker:
+
+- **Conda and Apptainer:** the process manager resolves when it starts the worker, and the `load` message carries `"model": <variant>` and `"resources": {...}`.
+- **Ray:** `load_model(runtime="ray")` resolves on the driver and passes both to the actor.
+
+Each model's `load_model(model, resources, **kwargs)` receives them as plain data:
 
 ```python
 class DinoBloom(BaseModel):
     PROJECT = "dinobloom"
 
-    def load_model(self, model=None, **kwargs):
-        manifest = REGISTRY.resolve(self.PROJECT, model)
-        resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
-
+    def load_model(self, model, resources, **kwargs):
         architecture = resources["architecture"]
-        self.model = torch.hub.load(architecture.repo, architecture.entrypoint, pretrained=False)
-        ckpt_path = resources["weights"].files["checkpoint"]
+        self.model = torch.hub.load(architecture["repo"], architecture["entrypoint"], pretrained=False)
+        ckpt_path = resources["weights"]["files"]["checkpoint"]
         ...
 ```
 

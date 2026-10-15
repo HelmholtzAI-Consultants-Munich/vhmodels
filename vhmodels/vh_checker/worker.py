@@ -78,10 +78,13 @@ class ModelWorker:
         load_kwargs = message.get("load_kwargs") or {}
         if not isinstance(load_kwargs, dict):
             raise ValueError("load_kwargs must be a JSON object.")
+        resources = message.get("resources") or {}
+        if not isinstance(resources, dict):
+            raise ValueError("resources must be a JSON object.")
 
         model_class = BaseModel.get_class(project)
         model = model_class()
-        model.load_model(message.get("model"), **load_kwargs)
+        model.load_model(message.get("model"), resources, **load_kwargs)
         # Publish only a completely loaded model. A failed load leaves the
         # worker unloaded so the process manager can tear the instance down.
         self._model = model

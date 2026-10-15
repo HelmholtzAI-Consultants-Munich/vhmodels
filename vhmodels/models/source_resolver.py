@@ -1,10 +1,10 @@
 """Resolves manifest ``sources`` into local paths, centralizing downloads.
 
 Each entry in ``ResolvedManifest.sources`` describes *where* a resource comes
-from; ``SourceResolver`` turns that description into something ``model.py``
-can hand straight to a library call -- a local path, a repo id, a package
-name. This keeps ``hf_hub_download`` / cache-directory bookkeeping in one
-place instead of duplicated across every model's ``load_model``.
+from; ``SourceResolver`` runs on the host and turns that description into a
+plain, JSON-safe dict that the worker passes to ``model.load_model`` -- a local
+path, a repo id, a package name. This keeps ``hf_hub_download`` /
+cache-directory bookkeeping (and Pydantic) out of every model environment.
 
 Downloads only happen for sources that declare explicit ``files`` -- a
 ``huggingface`` source without ``files`` (see ``ProtTrans/model.json``)
@@ -15,7 +15,6 @@ cache.
 """
 
 import hashlib
-import importlib.util
 from pathlib import Path
 
 from vhmodels.models.schema import (
@@ -33,48 +32,11 @@ def _cache_key(*parts):
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:12]
 
 
-class ResolvedHuggingFace:
-    def __init__(self, repo_id, revision, files):
-        self.repo_id = repo_id
-        self.revision = revision
-        self.files = files  # {name: Path}, empty when the source has no files
-
-
-class ResolvedTorchHub:
-    def __init__(self, repo, revision, entrypoint):
-        self.repo = repo
-        self.revision = revision
-        self.entrypoint = entrypoint
-
-
-class ResolvedURL:
-    def __init__(self, path, sha256):
-        self.path = path
-        self.sha256 = sha256
-
-
-class ResolvedGit:
-    def __init__(self, path, revision):
-        self.path = path
-        self.revision = revision
-
-
-class ResolvedLocal:
-    def __init__(self, path):
-        self.path = path
-
-
-class ResolvedPythonPackage:
-    def __init__(self, name, version):
-        self.name = name
-        self.version = version
-
-
 class SourceResolver:
     """Turns typed manifest sources into locally usable resources."""
 
     def resolve(self, sources, model_dir=None):
-        """Resolve every named source. Returns ``{name: Resolved*}``."""
+        """Resolve every named source into ``{name: dict}`` with string paths."""
         model_dir = Path(model_dir) if model_dir is not None else None
         return {
             name: self._resolve_one(source, model_dir)
@@ -102,19 +64,27 @@ class SourceResolver:
             from huggingface_hub import hf_hub_download
 
             for name, filename in source.files.items():
-                files[name] = Path(
-                    hf_hub_download(
-                        repo_id=source.repo_id,
-                        filename=filename,
-                        revision=source.revision,
-                    )
+                files[name] = hf_hub_download(
+                    repo_id=source.repo_id,
+                    filename=filename,
+                    revision=source.revision,
                 )
-        return ResolvedHuggingFace(source.repo_id, source.revision, files)
+        return {
+            "type": "huggingface",
+            "repo_id": source.repo_id,
+            "revision": source.revision,
+            "files": files,
+        }
 
     def _resolve_torch_hub(self, source):
         # torch.hub.load manages its own on-disk cache; the model loader
         # calls it directly with these fields.
-        return ResolvedTorchHub(source.repo, source.revision, source.entrypoint)
+        return {
+            "type": "torch_hub",
+            "repo": source.repo,
+            "revision": source.revision,
+            "entrypoint": source.entrypoint,
+        }
 
     def _resolve_url(self, source):
         import os
@@ -141,7 +111,7 @@ class SourceResolver:
         if destination.exists() and (
             not source.sha256 or sha256_of(destination) == source.sha256
         ):
-            return ResolvedURL(destination, source.sha256)
+            return {"type": "url", "path": str(destination), "sha256": source.sha256}
 
         with tempfile.NamedTemporaryFile(
             dir=destination.parent,
@@ -162,7 +132,7 @@ class SourceResolver:
             os.replace(temporary_path, destination)
         finally:
             temporary_path.unlink(missing_ok=True)
-        return ResolvedURL(destination, source.sha256)
+        return {"type": "url", "path": str(destination), "sha256": source.sha256}
 
     def _resolve_git(self, source):
         import os
@@ -201,7 +171,7 @@ class SourceResolver:
                         raise
             finally:
                 shutil.rmtree(temporary_path, ignore_errors=True)
-        return ResolvedGit(destination, source.revision)
+        return {"type": "git", "path": str(destination), "revision": source.revision}
 
     def _resolve_local(self, source, model_dir):
         path = Path(source.path)
@@ -209,12 +179,12 @@ class SourceResolver:
             path = model_dir / path
         if not path.exists():
             raise FileNotFoundError(f"Local source not found: {path}")
-        return ResolvedLocal(path)
+        return {"type": "local", "path": str(path)}
 
     def _resolve_python_package(self, source):
-        if importlib.util.find_spec(source.name) is None:
-            raise ModuleNotFoundError(
-                f"Python package source '{source.name}' is not importable. "
-                "It must be installed by the model's runtime environment."
-            )
-        return ResolvedPythonPackage(source.name, source.version)
+        # Installed in the model environment, not on the host; env builds check it.
+        return {
+            "type": "python_package",
+            "name": source.name,
+            "version": source.version,
+        }

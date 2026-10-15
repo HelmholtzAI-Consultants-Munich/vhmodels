@@ -1,6 +1,4 @@
 from vhmodels.vh_checker.base import BaseModel
-from vhmodels.models.registry import REGISTRY
-from vhmodels.models.source_resolver import SourceResolver
 from vhmodels.utils.device import resolve_torch_device
 
 import pickle
@@ -57,7 +55,7 @@ class MolE(BaseModel):
         )
         return embedding.tolist()
 
-    def load_model(self, model=None, **kwargs):
+    def load_model(self, model, resources, **kwargs):
         """
         Downloads and loads the necessary artifacts for the MolE model from HuggingFace.
 
@@ -71,19 +69,16 @@ class MolE(BaseModel):
         -------
         None
         """
-        manifest = REGISTRY.resolve(self.PROJECT, model or "default")
-        resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
-
         self.device = resolve_torch_device(torch, kwargs.get("device", "auto"))
 
-        weights = resources["weights"].files
+        weights = resources["weights"]["files"]
         cfg = yaml.safe_load(open(weights["config"]))
         self.model = ginet_concat.GINet(**cfg["model"]).to(self.device)
         self.model.load_state_dict(
             torch.load(weights["checkpoint"], map_location=self.device)
         )
 
-        xgb = resources["xgb"].files
+        xgb = resources["xgb"]["files"]
         self.xgb = pickle.load(open(xgb["model"], "rb"))
         self.screening = xgb["screening"]
 
@@ -139,10 +134,3 @@ class MolE(BaseModel):
 
     def generate(self, input, **kwargs):
         pass
-
-
-if __name__ == "__main__":
-    model = MolE()
-    model.load_model()
-    result = model.predict("example_data/MolE/examples_molecules.tsv")
-    print(result)

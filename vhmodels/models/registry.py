@@ -132,6 +132,14 @@ class Registry:
             model_dir=manifest.model_dir,
         )
 
+    def resolve_resources(self, project, variant=None):
+        """Resolve a variant and its sources on the host; returns ``(variant, resources)``."""
+        from vhmodels.models.source_resolver import SourceResolver
+
+        manifest = self.resolve(project, variant)
+        resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
+        return manifest.variant, resources
+
     @staticmethod
     def _load_variant(manifest, variant):
         path = Path(manifest.model_dir) / "manifests" / f"{variant}.json"
