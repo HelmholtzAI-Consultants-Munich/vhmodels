@@ -124,7 +124,9 @@ one, or `resolve()` raises with the list of valid ids.
 
 `Registry` also backs the CLI: `vh-checker list`, `create-env`, and
 `create-apptainer-image` all read `ModelManifest` fields (`supported_platforms`,
-`runtimes.conda`, `runtimes.apptainer`) instead of the old flat dict.
+`runtimes.conda`, `runtimes.uv`, `runtimes.apptainer`) instead of the old flat
+dict. `runtimes.uv` is the dependency spec shared by the Apptainer image and the
+Ray venv; `runtimes.apptainer` only marks the image platform and requires it.
 
 ## Downloading: SourceResolver
 
