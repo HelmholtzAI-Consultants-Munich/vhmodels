@@ -9,3 +9,4 @@ hpc-job-submit/config.local.json
 
 output/
 python_output/
+.venv/
