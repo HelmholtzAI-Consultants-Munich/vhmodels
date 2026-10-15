@@ -33,11 +33,15 @@ class ProtTrans(BaseModel):
     )
 
     def __init__(self):
+        # This adapter exposes embeddings. For the SS3 checkpoint, BertModel
+        # loads the fine-tuned BERT backbone without the classification head.
         self.model_specs = {
             "prot_t5_xl_uniref50": (T5Tokenizer, T5EncoderModel),
             "prot_t5_xxl_uniref50": (T5Tokenizer, T5EncoderModel),
             "prot_t5_xl_bfd": (T5Tokenizer, T5EncoderModel),
+            "prot_t5_xxl_bfd": (T5Tokenizer, T5EncoderModel),
             "prot_bert_bfd": (BertTokenizer, BertModel),
+            "prot_bert_bfd_ss3": (BertTokenizer, BertModel),
             "prot_bert": (BertTokenizer, BertModel),
             "prot_albert": (AlbertTokenizer, AlbertModel),
             "prot_xlnet": (XLNetTokenizer, XLNetModel),
@@ -51,10 +55,16 @@ class ProtTrans(BaseModel):
         self.device = None
         self.variant = None
 
+    @staticmethod
+    def _revision(source):
+        return {"revision": source.revision} if source.revision else {}
+
     def load_model(self, model=None, **kwargs):
         """
         Downloads and loads the artifacts for the specified model in the ProtTrans HF repository. Possible options are:
+        - prot_bert
         - prot_bert_bfd
+        - prot_bert_bfd_ss3
         - prot_t5_xl_uniref50
         - prot_t5_xxl_bfd
         - prot_t5_xxl_uniref50
@@ -88,19 +98,17 @@ class ProtTrans(BaseModel):
             )
         self.variant = model
 
-        # prot_electra_bfd's tokenizer/weights sources point at the
-        # generator/discriminator repos respectively -- see
-        # manifests/prot_electra_bfd.json. Every other variant's sources
-        # resolve to the same "virtual-human-chc/{variant}" repo, letting
-        # transformers.from_pretrained() do the rest.
         manifest = REGISTRY.resolve(self.PROJECT, model)
         resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
+        tokenizer, weights = resources["tokenizer"], resources["weights"]
 
         tokenizer_cls, model_cls = self.model_specs[model]
         self.tokenizer = tokenizer_cls.from_pretrained(
-            resources["tokenizer"].repo_id, do_lower_case=False
+            tokenizer.repo_id, do_lower_case=False, **self._revision(tokenizer)
         )
-        self.model = model_cls.from_pretrained(resources["weights"].repo_id)
+        self.model = model_cls.from_pretrained(
+            weights.repo_id, **self._revision(weights)
+        )
 
         self.model = self.model.to(self.device)
 
