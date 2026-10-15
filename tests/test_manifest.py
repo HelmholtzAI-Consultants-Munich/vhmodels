@@ -22,11 +22,13 @@ from vhmodels.models.registry import REGISTRY, Registry
 from vhmodels.models.schema import (
     HuggingFaceSource,
     ModelManifest,
+    Runtimes,
     Source,
     TorchHubSource,
     VariantManifest,
 )
 from vhmodels.models.source_resolver import SourceResolver
+from vhmodels.utils.uv_utils import MODEL_PYTHON, model_uv_spec
 
 _SOURCE_ADAPTER = TypeAdapter(Source)
 
@@ -70,6 +72,21 @@ def test_source_rejects_unknown_fields():
 def test_model_manifest_requires_declared_sections():
     with pytest.raises(ValidationError):
         ModelManifest.model_validate({"schema_version": "1.0"})
+
+
+def test_apptainer_runtime_requires_uv_spec():
+    with pytest.raises(ValidationError, match="requires runtimes.uv"):
+        Runtimes.model_validate({"apptainer": {"platform": "linux-x86_64"}})
+
+
+def test_uv_runtime_has_no_per_model_python():
+    with pytest.raises(ValidationError):
+        Runtimes.model_validate({"uv": {"requirements": "r.txt", "python": "3.10"}})
+
+
+def test_model_python_matches_repository_python_version():
+    python_version = Path(__file__).resolve().parents[1] / ".python-version"
+    assert python_version.read_text(encoding="utf-8").strip() == MODEL_PYTHON
 
 
 def test_variant_manifest_defaults_to_no_sources():
@@ -203,6 +220,13 @@ def test_registry_get_model_sets_model_dir(project):
     manifest = REGISTRY.get_model(project)
     assert manifest.model_dir
     assert manifest.model.id == project
+
+
+@pytest.mark.parametrize("project", _REAL_MODELS)
+def test_real_models_declare_existing_uv_files(project):
+    spec = model_uv_spec(REGISTRY.get_model(project))
+    assert spec.requirements_path.is_file()
+    assert spec.exclude_path is None or spec.exclude_path.is_file()
 
 
 def test_has_model_and_unknown_project_raises():

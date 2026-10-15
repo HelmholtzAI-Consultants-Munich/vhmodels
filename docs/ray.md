@@ -26,8 +26,7 @@ directly; no socket, message protocol or worker process manager is involved.
 
 `vh-checker create-ray-env <project>` builds `<VENV_DIR>/<project>` from the same
 uv spec that the Apptainer image uses: `requirements`, `exclude` and
-`torch_backend` under `runtimes.apptainer` in `model.json`. It then adds two
-things:
+`torch_backend` under `runtimes.uv` in `model.json`. It then adds two things:
 
 - `ray==<driver Ray version>`, resolved in the same `uv pip install` as the model's pins, so conflicts fail at build time rather than when the actor starts.
 - An editable, dependency-free install of this checkout, so the actor can import `vhmodels`. This is the counterpart of `PYTHONPATH=/opt/vhmodels-src` in the image.
@@ -39,7 +38,7 @@ from the venv rather than the current directory.
 Ray runs every actor with the driver's worker entrypoint and only swaps the
 interpreter. That is why a model venv must match the driver exactly:
 
-- **Python**: the venv is built with the driver's exact `platform.python_version()` as a uv-managed CPython. The cluster standardises on **Python 3.11**. If a manifest declares another version, the build warns and uses the driver's version.
+- **Python**: the venv is built with the driver's exact `platform.python_version()` as a uv-managed CPython. Model environments do not choose their Python: `MODEL_PYTHON` in `vhmodels/utils/uv_utils.py` (**3.11**, matching `.python-version`) applies to every Apptainer image and Ray venv. If the driver runs another minor version, the build warns and still uses the driver's.
 - **Ray**: the version is pinned once, in the `ray` extra of `pyproject.toml`.
 
 ### When a venv is rebuilt
@@ -137,6 +136,6 @@ Notes on `run_inference_ray.sbatch`:
 ## Roadmap
 
 1. **Multi-node Slurm.** Use `srun ray symmetric-run` (Ray ≥ 2.49), and add GPU-type resources. Cut the network-filesystem start-up cost, for example by packing each venv into a squashfs image or copying it to node-local disk at job start.
-2. **Registry integration.** Add optional `runtimes.uv` and `resources` blocks to `model.json`. `utils.uv_utils.model_uv_spec` is the single place that reads them. Add `create-ray-env --all`, move the remaining models to Python 3.11, then make Ray the default runtime and retire Conda and Apptainer.
+2. **Registry integration.** Add an optional `resources` block to `model.json` next to `runtimes.uv` (read only by `utils.uv_utils.model_uv_spec`). Add `create-ray-env --all`, then make Ray the default runtime and retire Conda and Apptainer.
 3. **Ray Serve.** `ModelActor` loads its model in `__init__`, so it can back a deployment directly. Pass the same `runtime_env` in `ray_actor_options`, add `ray[serve]` to the model venvs, and put a FastAPI ingress in front.
 4. **Kubernetes (KubeRay).** Bake the driver env and the model venvs into one image at a fixed `VHMODELS_VENV_DIR`. The `py_executable` mechanism stays the same.

@@ -24,7 +24,7 @@ fixtures -- must not import it; they use the stdlib-only
 
 from typing import Annotated, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SCHEMA_VERSION = "1.0"
 
@@ -101,17 +101,31 @@ class CondaRuntime(_Strict):
     platforms: Dict[str, CondaPlatform]
 
 
-class ApptainerRuntime(_Strict):
-    platform: str
-    python: str
+class UvRuntime(_Strict):
+    """uv dependency spec shared by the Apptainer image and the Ray venv.
+
+    The Python version is not per model: see ``utils.uv_utils.MODEL_PYTHON``.
+    """
+
     requirements: str
     exclude: Optional[str] = None
     torch_backend: Optional[str] = None
 
 
+class ApptainerRuntime(_Strict):
+    platform: str
+
+
 class Runtimes(_Strict):
     conda: Optional[CondaRuntime] = None
+    uv: Optional[UvRuntime] = None
     apptainer: Optional[ApptainerRuntime] = None
+
+    @model_validator(mode="after")
+    def _apptainer_needs_uv(self):
+        if self.apptainer is not None and self.uv is None:
+            raise ValueError("runtimes.apptainer requires runtimes.uv")
+        return self
 
 
 # --- Identity / implementation -------------------------------------------------

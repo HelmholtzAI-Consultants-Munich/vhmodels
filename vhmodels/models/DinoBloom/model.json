@@ -19,12 +19,11 @@
         "macos-arm64": { "environment": "environment.macos-arm64.yml" }
       }
     },
-    "apptainer": {
-      "platform": "linux-x86_64",
-      "python": "3.10",
+    "uv": {
       "requirements": "requirements.linux-x86_64.txt",
       "torch_backend": "cu126"
-    }
+    },
+    "apptainer": { "platform": "linux-x86_64" }
   },
   "sources": {
     "architecture": {

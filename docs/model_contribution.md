@@ -73,12 +73,11 @@ Create a new folder for your model in `vhmodels/models`. The folder needs to con
                 "linux-x86_64": { "environment": "environment.linux-x86_64.yml" }
             }
         },
-        "apptainer": {
-            "platform": "linux-x86_64",
-            "python": "3.10",
+        "uv": {
             "requirements": "requirements.linux-x86_64.txt",
             "torch_backend": "cu126"
-        }
+        },
+        "apptainer": { "platform": "linux-x86_64" }
     },
     "sources": {
         "weights": {
@@ -91,11 +90,15 @@ Create a new folder for your model in `vhmodels/models`. The folder needs to con
 
 `supported_platforms` must include `linux-x86_64` for Apptainer. Add
 `macos-arm64` and a matching platform entry under `runtimes.conda.platforms`
-only when you also provide `environment.macos-arm64.yml`. In
-`runtimes.apptainer`, `python` and `requirements` are required; `torch_backend`
-is optional and selects the uv PyTorch backend (for example, `cu126`). If a
-transitive package must be omitted, set `exclude` to a uv excludes file in the
-same model directory.
+only when you also provide `environment.macos-arm64.yml`.
+
+`runtimes.uv` is the dependency spec for both the Apptainer image and the Ray
+venv, and `runtimes.apptainer` requires it. `requirements` is required;
+`torch_backend` is optional and selects the uv PyTorch backend (for example,
+`cu126`). If a transitive package must be omitted, set `exclude` to a uv
+excludes file in the same model directory. There is no per-model Python
+version: every image and venv uses Python 3.11 (`MODEL_PYTHON` in
+`vhmodels/utils/uv_utils.py`), so the requirements must install on it.
 
 `sources` describes where your model's resources come from, as one or more
 independently typed entries (`huggingface`, `torch_hub`, `url`, `git`, `local`,
@@ -142,8 +145,9 @@ Additionally, you can also provide an `environment.macos-arm64.yml` file.
 
 - `requirements.linux-x86_64.txt`
 
-List the Python packages for the Apptainer image in standard pip requirements
-syntax. Keep its Python and package versions consistent with the Conda file.
+List the Python packages for the Apptainer image and the Ray venv in standard
+pip requirements syntax, installable on Python 3.11. Keep package versions
+consistent with the Conda file.
 The shared definition starts from Ubuntu 24.04, installs these requirements with
 uv, and stores the finished environment at `/opt/venv`. uv is supplied by the
 image build; contributors and users do not need it on the host. If a model needs
@@ -156,7 +160,7 @@ so do not add `pydantic` or other `vhmodels` host dependencies.
 Use an exclusion file only when a transitive dependency conflicts with the
 package selected by the model, as with Hyformer's legacy `rdkit-pypi`
 dependency. List one excluded requirement per line, explain why it is excluded
-in a comment, and reference the file through `runtimes.apptainer.exclude` in
+in a comment, and reference the file through `runtimes.uv.exclude` in
 `model.json`.
 
 - `model.py`

@@ -18,11 +18,10 @@
         "linux-x86_64": { "environment": "environment.linux-x86_64.yml" }
       }
     },
-    "apptainer": {
-      "platform": "linux-x86_64",
-      "python": "3.11",
+    "uv": {
       "requirements": "requirements.linux-x86_64.txt"
-    }
+    },
+    "apptainer": { "platform": "linux-x86_64" }
   },
   "sources": {
     "tokenizer": {

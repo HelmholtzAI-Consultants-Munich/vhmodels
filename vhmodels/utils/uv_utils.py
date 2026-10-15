@@ -17,25 +17,29 @@ def uv_build_cache_dir():
     return (cache_root / "vhmodels" / "apptainer" / "uv").resolve()
 
 
+# Python minor version of every model environment (Apptainer images and Ray
+# venvs). A Ray worker must run the driver's Python, so it is the same for all
+# models and must match the repository's .python-version.
+MODEL_PYTHON = "3.11"
+
+
 @dataclass(frozen=True)
 class UvSpec:
     """A model's uv dependency spec; every field is None when it has none."""
 
-    python: Optional[str] = None
     requirements_path: Optional[Path] = None
     exclude_path: Optional[Path] = None
     torch_backend: Optional[str] = None
 
 
 def model_uv_spec(manifest):
-    """Read the uv spec under ``runtimes.apptainer``; paths are resolved, not checked."""
-    config = manifest.runtimes.apptainer
+    """Read the spec under ``runtimes.uv``; paths are resolved, not checked."""
+    config = manifest.runtimes.uv
     if config is None:
         return UvSpec()
 
     model_dir = Path(manifest.model_dir)
     return UvSpec(
-        python=config.python,
         requirements_path=model_dir / config.requirements,
         exclude_path=model_dir / config.exclude if config.exclude else None,
         torch_backend=config.torch_backend,

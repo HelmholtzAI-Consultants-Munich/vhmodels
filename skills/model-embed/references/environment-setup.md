@@ -73,8 +73,8 @@ On macOS, keep the checkout, SIF, and input data under your home directory. The
 generated Linux/AMD64 SIF can be copied to an x86_64 HPC system and run there
 directly.
 
-Each model's `model.json` supplies the Python version, Linux requirements file,
-and optional PyTorch backend. The Ubuntu 24.04 image uses uv during the build and
+Each model's `model.json` supplies the Linux requirements file and optional
+PyTorch backend under `runtimes.uv`; every image uses Python 3.11. The Ubuntu 24.04 image uses uv during the build and
 installs the finished environment at `/opt/venv`. Completed uv downloads and
 managed Python archives are kept in the per-user build cache at
 `${XDG_CACHE_HOME:-~/.cache}/vhmodels/apptainer/uv`; the cache is not included in
