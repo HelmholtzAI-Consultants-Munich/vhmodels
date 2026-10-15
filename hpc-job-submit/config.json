@@ -2,6 +2,7 @@
   "IMAGE_DIR": null,
   "APPTAINER_CACHEDIR": null,
   "UV_CACHE_DIR": null,
+  "VENV_DIR": null,
   "HF_CACHE_DIR": null,
   "TORCH_CACHE_DIR": null,
   "MODEL": "nicheformer",

@@ -20,6 +20,7 @@ config per model, and fill in absolute paths available on the compute nodes.
 | `IMAGE_DIR` | Stores the built `.sif` image |
 | `APPTAINER_CACHEDIR` | Host cache for the Ubuntu and uv base image layers |
 | `UV_CACHE_DIR` | Host cache for Python packages and the managed Python used during image builds |
+| `VENV_DIR` | Ray runtime only: stores one uv venv per model |
 | `HF_CACHE_DIR` | Hugging Face model cache; weights go to `<HF_CACHE_DIR>/hub`, while the login token stays in `~/.cache/huggingface` |
 | `TORCH_CACHE_DIR` | PyTorch model cache |
 | `MODEL` | Registered model ID |
@@ -56,6 +57,25 @@ sbatch "${HPC_SCRIPTS}/build_apptainer.sbatch" "${CONFIG}"
 sbatch "${HPC_SCRIPTS}/run_inference.sbatch" "${CONFIG}"
 sbatch "${HPC_SCRIPTS}/run_inference_gpu.sbatch" "${CONFIG}"
 ```
+
+## Ray runtime (experimental)
+
+Instead of an Apptainer image, the [Ray runtime](../docs/ray.md) runs the model
+as a Ray actor in a uv venv under `VENV_DIR`. Both jobs need `uv` in `PATH` and
+`VHMODELS_PYTHON` pointing at the Python 3.11 driver environment with
+`vhmodels[cli,ray]` installed, because the venv must match its Python and Ray
+versions:
+
+```bash
+export VHMODELS_PYTHON=/path/to/vhmodels/.venv/bin/python
+
+sbatch "${HPC_SCRIPTS}/build_ray_env.sbatch" "${CONFIG}"
+# After the build finishes:
+sbatch "${HPC_SCRIPTS}/run_inference_ray.sbatch" "${CONFIG}"
+```
+
+- `build_ray_env.sbatch` runs `vh-checker create-ray-env` on a CPU node. It reuses an up-to-date venv.
+- `run_inference_ray.sbatch` starts a single-node Ray head inside the GPU allocation. Its ports are derived from the job id and its temp dir is under `/localscratch`. It then runs the inference script with `RAY_ADDRESS`, `VHMODELS_RUNTIME=ray`, `VHMODELS_VENV_DIR` and `VHMODELS_DEVICE=cuda:0` set. No bind mounts are needed. Slurm stops the Ray cluster when the job ends.
 
 The conversion job defaults to `virtual-human-chc/prot_t5_xxl_bfd` on `main`. It requires a Hugging Face login that can open a PR on the model repository. To target another model or revision:
 
