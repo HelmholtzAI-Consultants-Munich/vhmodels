@@ -1,7 +1,6 @@
 """Command-line interface for listing, preparing, and running models."""
 
 import json
-import os
 import platform
 import shutil
 import subprocess
@@ -14,6 +13,8 @@ from rich.table import Table
 
 from vhmodels.models.registry import REGISTRY
 from vhmodels.utils import lima_utils
+from vhmodels.utils.uv_utils import model_uv_spec
+from vhmodels.utils.uv_utils import uv_build_cache_dir as _uv_build_cache_dir
 
 
 @click.group()
@@ -25,17 +26,6 @@ def main():
 console = Console()
 
 _UV_BUILD_CACHE_DEST = "/opt/uv-cache"
-
-
-def _uv_build_cache_dir():
-    """Return the host uv cache mounted during Apptainer image builds."""
-    configured = os.environ.get("UV_CACHE_DIR")
-    if configured:
-        return Path(configured).expanduser().resolve()
-
-    cache_home = os.environ.get("XDG_CACHE_HOME")
-    cache_root = Path(cache_home).expanduser() if cache_home else Path.home() / ".cache"
-    return (cache_root / "vhmodels" / "apptainer" / "uv").resolve()
 
 
 @main.command()
@@ -225,13 +215,11 @@ def create_apptainer_image(project, output):
     package_dir = Path(__file__).resolve().parent.parent
     template_path = package_dir / "envs" / "Apptainer"
     target_dir = Path(manifest.model_dir)
-    apptainer_config = manifest.runtimes.apptainer
-    python_version = apptainer_config.python if apptainer_config else None
-    requirements_file = apptainer_config.requirements if apptainer_config else None
-    exclude_file = apptainer_config.exclude if apptainer_config else None
-    torch_backend = apptainer_config.torch_backend if apptainer_config else None
-    requirements_path = target_dir / requirements_file if requirements_file else None
-    exclude_path = target_dir / exclude_file if exclude_file else None
+    uv_spec = model_uv_spec(manifest)
+    python_version = uv_spec.python
+    requirements_path = uv_spec.requirements_path
+    exclude_path = uv_spec.exclude_path
+    torch_backend = uv_spec.torch_backend
 
     if not template_path.is_file():
         raise click.ClickException(
@@ -297,13 +285,13 @@ def create_apptainer_image(project, output):
         "{project}": project,
         "{model_dir}": target_dir.name,
         "{python_version}": python_version,
-        "{requirements_file}": requirements_file,
+        "{requirements_file}": requirements_path.name,
         "{torch_backend_arg}": (
             f"--torch-backend {torch_backend}" if torch_backend else ""
         ),
         "{exclude_arg}": (
-            f"--excludes /opt/vhmodels-src/vhmodels/models/{target_dir.name}/{exclude_file}"
-            if exclude_file
+            f"--excludes /opt/vhmodels-src/vhmodels/models/{target_dir.name}/{exclude_path.name}"
+            if exclude_path
             else ""
         ),
     }
@@ -357,11 +345,28 @@ def create_apptainer_image(project, output):
 
 
 @main.command()
+@click.argument("project")
+@click.option("--force", is_flag=True, help="Rebuild an up-to-date venv.")
+def create_ray_env(project, force):
+    """Create the uv venv (under $VHMODELS_VENV_DIR) a model's Ray actor runs in."""
+    from vhmodels.vh_ray.envs import build_model_venv
+
+    if not REGISTRY.has_model(project):
+        raise click.ClickException(f"Model '{project}' is not registered.")
+    try:
+        build_model_venv(project, REGISTRY.get_model(project), force=force)
+    except subprocess.CalledProcessError as error:
+        raise click.ClickException(f"Failed to build the Ray venv for '{project}'.") from error
+    except (FileNotFoundError, RuntimeError) as error:
+        raise click.ClickException(str(error)) from error
+
+
+@main.command()
 @click.argument("model_id")
 @click.argument("data_json")
 @click.option(
     "--runtime",
-    type=click.Choice(["conda", "apptainer"]),
+    type=click.Choice(["conda", "apptainer", "ray"]),
     default="conda",
     show_default=True,
 )

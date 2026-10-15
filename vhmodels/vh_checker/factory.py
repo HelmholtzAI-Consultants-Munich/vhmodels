@@ -175,7 +175,14 @@ class ModelProxy:
         self.close()
 
 
-def load_model(project, model=None, runtime="conda", image_path=None, **load_kwargs):
+def load_model(
+    project,
+    model=None,
+    runtime="conda",
+    image_path=None,
+    ray_options=None,
+    **load_kwargs,
+):
     registry = _get_registry()
     if not registry.has_model(project):
         raise ValueError(f"Model '{project}' not found.")
@@ -191,6 +198,23 @@ def load_model(project, model=None, runtime="conda", image_path=None, **load_kwa
         env_name = str(Path(image_path).expanduser().resolve())
     elif image_path is not None:
         raise ValueError("image_path can only be used with runtime='apptainer'.")
+
+    if runtime == "ray":
+        # Ray is an optional extra, so it is only imported for this runtime.
+        from vhmodels.vh_ray.client import RayModel
+        from vhmodels.vh_ray.envs import check_model_venv
+
+        check_model_venv(project, manifest)
+        variant, resources = _resolve_resources(project, model)
+        return RayModel(
+            project=project,
+            model=variant,
+            resources=resources,
+            load_kwargs=load_kwargs,
+            ray_options=ray_options,
+        )
+    if ray_options is not None:
+        raise ValueError("ray_options can only be used with runtime='ray'.")
 
     return ModelProxy(
         project=project,
