@@ -222,6 +222,7 @@ def test_persistent_worker_reuse_cleanup_and_restart(
             assert first["pid"] == second["pid"]
             assert [first["embed_count"], second["embed_count"]] == [1, 2]
             assert first["model"] == "tiny-variant"
+            assert first["resources"] == {}
             assert first["load_kwargs"] == {"sentinel": "forwarded-load-kwarg"}
             assert first["kwargs"] == {"batch_size": 2}
             assert second["kwargs"] == {"normalize": True}

@@ -49,12 +49,15 @@ class ModelProcessManager:
         load_kwargs,
         timeout,
         runtime_name,
+        resolve_resources=None,
     ):
         self.transport = transport
         self.backend = transport.backend
         self.project = project
         self.model = model
         self.load_kwargs = dict(load_kwargs)
+        # Called on the host at worker start; returns (variant, resources).
+        self.resolve_resources = resolve_resources
         try:
             self.timeout = float(timeout)
         except (TypeError, ValueError) as error:
@@ -134,6 +137,9 @@ class ModelProcessManager:
         if self._closed:
             raise RuntimeError("This model process manager is closed.")
 
+        variant, resources = self.model, {}
+        if self.resolve_resources is not None:
+            variant, resources = self.resolve_resources()
         self.transport.prepare()
         _log("BACKEND", f"{self.runtime_name} runtime ready")
         # A launcher may create its worker before reporting an error, so mark
@@ -147,7 +153,8 @@ class ModelProcessManager:
                 {
                     MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
                     "project": self.project,
-                    "model": self.model,
+                    "model": variant,
+                    "resources": resources,
                     "load_kwargs": self.load_kwargs,
                 }
             )
@@ -268,6 +275,7 @@ class ApptainerProcessManager(ModelProcessManager):
         timeout,
         run_subprocess,
         extract_frame,
+        resolve_resources=None,
     ):
         # Resolve through attributes so existing test/application injection can
         # replace the subprocess helpers after construction.
@@ -287,6 +295,7 @@ class ApptainerProcessManager(ModelProcessManager):
             load_kwargs=load_kwargs,
             timeout=timeout,
             runtime_name="Apptainer",
+            resolve_resources=resolve_resources,
         )
 
     def _translate_start_error(self, error):
@@ -323,6 +332,7 @@ class CondaProcessManager(ModelProcessManager):
         popen=None,
         request_sender=None,
         terminate_process=None,
+        resolve_resources=None,
     ):
         transport = CondaWorkerTransport(
             backend,
@@ -337,4 +347,5 @@ class CondaProcessManager(ModelProcessManager):
             load_kwargs=load_kwargs,
             timeout=timeout,
             runtime_name="Conda",
+            resolve_resources=resolve_resources,
         )

@@ -1,6 +1,4 @@
 from vhmodels.vh_checker.base import BaseModel
-from vhmodels.models.registry import REGISTRY
-from vhmodels.models.source_resolver import SourceResolver
 from vhmodels.utils.device import resolve_torch_device
 
 import torch
@@ -31,7 +29,7 @@ class DinoBloom(BaseModel):
         self.model = None
         self.device = None
 
-    def load_model(self, model=None, **kwargs):
+    def load_model(self, model, resources, **kwargs):
         """
         Downloads and loads the specified model version - S, B, L, G - of the DinoBloom models. This includes the following steps:
         - Resolving the "facebookresearch/dinov2" architecture (torch_hub source)
@@ -56,9 +54,6 @@ class DinoBloom(BaseModel):
                 f"Unknown model '{model}' in DinoBloom. Available models: {list(self.embed_dims)}"
             )
 
-        manifest = REGISTRY.resolve(self.PROJECT, model)
-        resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
-
         self.device = resolve_torch_device(torch, kwargs.get("device", "auto"))
 
         embed_dim = self.embed_dims[model]
@@ -67,10 +62,10 @@ class DinoBloom(BaseModel):
         # Build the DINOv2 architecture without downloading its pretrained
         # weights; the complete DinoBloom checkpoint below replaces them.
         self.model = torch.hub.load(
-            architecture.repo, architecture.entrypoint, pretrained=False
+            architecture["repo"], architecture["entrypoint"], pretrained=False
         )
 
-        ckpt_path = resources["weights"].files["checkpoint"]
+        ckpt_path = resources["weights"]["files"]["checkpoint"]
         ckpt = torch.load(ckpt_path, map_location="cpu")
 
         num_tokens = int(1 + (224 / 14) ** 2)
@@ -204,15 +199,3 @@ class DinoBloom(BaseModel):
 
     def generate(self, input, **kwargs):
         pass
-
-
-if __name__ == "__main__":
-    db = DinoBloom()
-
-    test_image = Image.new("RGB", (224, 224), color=(73, 109, 137))
-
-    db.load_model(model="s", device="cpu")
-    result = db.embed(data=test_image)
-    print(result)
-    batch_result = db.embed(data=[test_image] * 5)
-    print(batch_result)

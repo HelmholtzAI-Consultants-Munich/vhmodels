@@ -8,8 +8,6 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-from vhmodels.models.registry import REGISTRY
-from vhmodels.models.source_resolver import SourceResolver
 from vhmodels.utils.device import resolve_torch_device
 from vhmodels.vh_checker.base import BaseModel
 
@@ -44,19 +42,17 @@ class HOptimus0(BaseModel):
             ]
         )
 
-    def load_model(self, model=None, **kwargs):
+    def load_model(self, model, resources, **kwargs):
         """Load the gated checkpoint through ``timm``.
 
         First accept the Hugging Face model's access conditions and make a
         read token available to this worker (for example via ``HF_TOKEN``).
         """
-        manifest = REGISTRY.resolve(self.PROJECT, model)
-        resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
         checkpoint = resources["checkpoint"]
 
-        model_name = f"hf-hub:{checkpoint.repo_id}"
-        if checkpoint.revision:
-            model_name = f"{model_name}@{checkpoint.revision}"
+        model_name = f"hf-hub:{checkpoint['repo_id']}"
+        if checkpoint["revision"]:
+            model_name = f"{model_name}@{checkpoint['revision']}"
 
         self.device = resolve_torch_device(torch, kwargs.get("device", "auto"))
         self.model = timm.create_model(

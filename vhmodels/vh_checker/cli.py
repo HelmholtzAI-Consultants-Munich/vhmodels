@@ -177,6 +177,7 @@ def create_env(project):
                 "-m",
                 "pip",
                 "install",
+                "--no-deps",
                 "-e",
                 str(project_root),
             ],

@@ -2,7 +2,6 @@ import importlib
 import sys
 import types
 from contextlib import nullcontext
-from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -55,23 +54,23 @@ def test_load_and_embed_follow_model_card_flow():
     embeddings.cpu.return_value.tolist.return_value = [[0.1, 0.2]]
     loaded_model.get_embeddings.return_value = embeddings
 
-    manifest = SimpleNamespace(sources={}, model_dir="/model")
     resources = {
-        "weights": SimpleNamespace(repo_id="virtual-human-chc/Nicheformer")
+        "weights": {
+            "type": "huggingface",
+            "repo_id": "virtual-human-chc/Nicheformer",
+            "revision": None,
+            "files": {},
+        }
     }
 
     try:
         with (
-            patch.object(module.REGISTRY, "resolve", return_value=manifest) as resolve,
-            patch.object(module, "SourceResolver") as resolver,
             patch.object(module, "resolve_torch_device", return_value="cpu"),
             patch.object(module.np, "load", return_value="technology mean") as load,
             patch.object(module.ad, "read_h5ad", return_value=adata) as read_h5ad,
         ):
-            resolver.return_value.resolve.return_value = resources
-
             model = module.Nicheformer()
-            model.load_model()
+            model.load_model("default", resources)
             result = model.embed(
                 {
                     "technology_mean": "technology_mean.npy",
@@ -79,7 +78,6 @@ def test_load_and_embed_follow_model_card_flow():
                 }
             )
 
-        resolve.assert_called_once_with("nicheformer", "default")
         module.AutoModelForMaskedLM.from_pretrained.assert_called_once_with(
             "virtual-human-chc/Nicheformer", trust_remote_code=True
         )

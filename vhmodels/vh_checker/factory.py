@@ -32,6 +32,11 @@ def _get_registry():
     return _registry
 
 
+def _resolve_resources(project, model):
+    """Resolve a variant's manifest and sources on the host (may download files)."""
+    return _get_registry().resolve_resources(project, model)
+
+
 def _extract_frame(stdout, stderr):
     """Extract and decode one RESULT_MARKER-framed JSON value."""
 
@@ -99,6 +104,7 @@ class ModelProxy:
                 timeout=timeout,
                 run_subprocess=lambda *args, **kwargs: _run_subprocess(*args, **kwargs),
                 extract_frame=lambda *args, **kwargs: _extract_frame(*args, **kwargs),
+                resolve_resources=lambda: _resolve_resources(project, model),
             )
         else:
             self._process_manager = CondaProcessManager(
@@ -107,6 +113,7 @@ class ModelProxy:
                 model=model,
                 load_kwargs=self.load_kwargs,
                 timeout=timeout,
+                resolve_resources=lambda: _resolve_resources(project, model),
             )
 
     def _ensure_backend_available(self):

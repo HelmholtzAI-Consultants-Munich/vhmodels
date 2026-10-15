@@ -24,6 +24,17 @@ from vhmodels.vh_checker.protocol import (
 )
 
 
+_RESOURCES = {"weights": {"type": "local", "path": "/host/weights.bin"}}
+
+
+@pytest.fixture(autouse=True)
+def no_source_downloads(monkeypatch):
+    """Resolve on the host without touching the registry's sources."""
+    monkeypatch.setattr(
+        factory, "_resolve_resources", lambda project, model: (model, _RESOURCES)
+    )
+
+
 def _frame(obj):
     return f"{RESULT_MARKER}{json.dumps(obj)}{RESULT_MARKER}\n"
 
@@ -350,6 +361,7 @@ def test_modelproxy_apptainer_starts_loads_and_reuses_instance(monkeypatch, tmp_
             MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
             "project": "dinobloom",
             "model": "s",
+            "resources": _RESOURCES,
             "load_kwargs": {"device": "cpu"},
         },
         {
@@ -508,6 +520,7 @@ def test_modelproxy_apptainer_prepares_and_uses_lima(monkeypatch, tmp_path):
             MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
             "project": "dinobloom",
             "model": None,
+            "resources": _RESOURCES,
             "load_kwargs": {"device": "cpu"},
         },
         {

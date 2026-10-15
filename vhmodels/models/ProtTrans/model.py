@@ -1,6 +1,4 @@
 from vhmodels.vh_checker.base import BaseModel
-from vhmodels.models.registry import REGISTRY
-from vhmodels.models.source_resolver import SourceResolver
 from vhmodels.utils.device import resolve_torch_device
 
 from transformers import T5EncoderModel, T5Tokenizer
@@ -57,9 +55,9 @@ class ProtTrans(BaseModel):
 
     @staticmethod
     def _revision(source):
-        return {"revision": source.revision} if source.revision else {}
+        return {"revision": source["revision"]} if source["revision"] else {}
 
-    def load_model(self, model=None, **kwargs):
+    def load_model(self, model, resources, **kwargs):
         """
         Downloads and loads the artifacts for the specified model in the ProtTrans HF repository. Possible options are:
         - prot_bert
@@ -98,16 +96,14 @@ class ProtTrans(BaseModel):
             )
         self.variant = model
 
-        manifest = REGISTRY.resolve(self.PROJECT, model)
-        resources = SourceResolver().resolve(manifest.sources, manifest.model_dir)
         tokenizer, weights = resources["tokenizer"], resources["weights"]
 
         tokenizer_cls, model_cls = self.model_specs[model]
         self.tokenizer = tokenizer_cls.from_pretrained(
-            tokenizer.repo_id, do_lower_case=False, **self._revision(tokenizer)
+            tokenizer["repo_id"], do_lower_case=False, **self._revision(tokenizer)
         )
         self.model = model_cls.from_pretrained(
-            weights.repo_id, **self._revision(weights)
+            weights["repo_id"], **self._revision(weights)
         )
 
         self.model = self.model.to(self.device)
@@ -195,11 +191,3 @@ class ProtTrans(BaseModel):
 
     def generate(self, input, **kwargs):
         pass
-
-
-if __name__ == "__main__":
-    model = ProtTrans()
-    model.load_model("prot_electra_discriminator_bfd")
-    result = model.embed(input=["PRTEINO", "SEQWENCE"])
-
-    print(result)

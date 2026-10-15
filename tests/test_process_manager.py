@@ -236,8 +236,8 @@ def test_model_worker_loads_once_and_handles_arbitrary_requests(monkeypatch, tmp
         def __init__(self):
             calls.append(("init",))
 
-        def load_model(self, model_name, **kwargs):
-            calls.append(("load", model_name, kwargs))
+        def load_model(self, model_name, resources, **kwargs):
+            calls.append(("load", model_name, resources, kwargs))
 
         def embed(self, input, **kwargs):
             calls.append(("embed", input, kwargs, Path.cwd()))
@@ -264,6 +264,7 @@ def test_model_worker_loads_once_and_handles_arbitrary_requests(monkeypatch, tmp
                 MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
                 "project": "any-registry-entry",
                 "model": "any-variant",
+                "resources": {"weights": {"type": "local", "path": "/weights"}},
                 "load_kwargs": {"device": "cpu", "precision": "float32"},
             }
         )
@@ -311,6 +312,7 @@ def test_model_worker_loads_once_and_handles_arbitrary_requests(monkeypatch, tmp
         (
             "load",
             "any-variant",
+            {"weights": {"type": "local", "path": "/weights"}},
             {"device": "cpu", "precision": "float32"},
         ),
     ]
@@ -349,7 +351,7 @@ def test_model_worker_remains_loaded_after_model_error(monkeypatch):
     calls = {"load": 0, "embed": 0}
 
     class FlakyModel:
-        def load_model(self, model_name, **kwargs):
+        def load_model(self, model_name, resources, **kwargs):
             calls["load"] += 1
 
         def embed(self, input, **kwargs):
@@ -385,7 +387,7 @@ def test_model_worker_dispatches_predict_with_embedding(monkeypatch):
     calls = []
 
     class RecordingModel:
-        def load_model(self, model_name, **kwargs):
+        def load_model(self, model_name, resources, **kwargs):
             calls.append(("load", model_name, kwargs))
 
         def predict(self, input, embedding, **kwargs):
@@ -424,7 +426,7 @@ def test_model_worker_predict_not_implemented_keeps_model_loaded(monkeypatch):
     calls = {"load": 0, "predict": 0}
 
     class EmbedOnlyModel:
-        def load_model(self, model_name, **kwargs):
+        def load_model(self, model_name, resources, **kwargs):
             calls["load"] += 1
 
         def predict(self, input, **kwargs):
@@ -514,6 +516,7 @@ def test_conda_manager_starts_once_requests_directly_and_reaps(tmp_path):
         MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
         "project": "generic-model",
         "model": "variant-a",
+        "resources": {},
         "load_kwargs": {"device": "cpu"},
     }
 
@@ -645,6 +648,7 @@ def test_manager_starts_and_loads_once_for_many_requests(make_manager, tmp_path)
             MESSAGE_TYPE_KEY: LOAD_MESSAGE_TYPE,
             "project": "generic-model",
             "model": "variant-z",
+            "resources": {},
             "load_kwargs": {"device": "cpu", "revision": "v2"},
         },
         {
