@@ -96,6 +96,8 @@ def test_ray_actor_runs_in_model_venv(
         assert first["load_kwargs"] == {"sentinel": "forwarded-load-kwarg"}
         assert first["kwargs"] == {"batch_size": 2}
         assert second["input"] == ["second"]
+        # Relative input paths resolve against the caller's directory.
+        assert os.path.realpath(first["cwd"]) == os.path.realpath(tmp_path)
 
         # PersistentFake has no predict(); the model's error reaches the host.
         with pytest.raises(AttributeError, match="predict"):

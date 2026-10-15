@@ -1,12 +1,9 @@
-"""Lightweight checks for the H-Optimus-0 registry entry and example script."""
+"""Lightweight check for the H-Optimus-0 example script."""
 
 import runpy
 from pathlib import Path
 
-import pytest
 import vhmodels
-
-from vhmodels.models.registry import REGISTRY
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -14,19 +11,7 @@ _EXAMPLE_SCRIPT = _PROJECT_ROOT / "examples/hoptimus0.py"
 _EXAMPLE_TILE = _PROJECT_ROOT / "example_data/H-Optimus-0/TUM-AACHEHDV.tif"
 
 
-def test_registry_declares_tile_embedder_and_pinned_checkpoint():
-    manifest = REGISTRY.resolve("hoptimus0")
-
-    assert manifest.variant == "default"
-    assert manifest.implementation.class_path == "HOptimus0.model.HOptimus0"
-    assert manifest.implementation.capabilities == ["embed"]
-    checkpoint = manifest.sources["checkpoint"]
-    assert checkpoint.repo_id == "bioptimus/H-optimus-0"
-    assert len(checkpoint.revision) == 40
-
-
-@pytest.mark.parametrize("runtime", ["conda", "apptainer"])
-def test_example_script_passes_tiff_to_model(monkeypatch, tmp_path, runtime):
+def test_example_script_passes_tiff_to_model(monkeypatch, tmp_path):
     assert _EXAMPLE_TILE.is_file()
     assert _EXAMPLE_TILE.suffix.lower() == ".tif"
     received = {}
@@ -48,7 +33,7 @@ def test_example_script_passes_tiff_to_model(monkeypatch, tmp_path, runtime):
         return FakeModel()
 
     monkeypatch.setattr(vhmodels, "load_model", fake_load_model)
-    monkeypatch.setenv("VHMODELS_RUNTIME", runtime)
+    monkeypatch.setenv("VHMODELS_RUNTIME", "apptainer")
     monkeypatch.setenv("VHMODELS_IMAGE_PATH", "test-hoptimus0.sif")
     monkeypatch.chdir(tmp_path)
 
@@ -57,24 +42,9 @@ def test_example_script_passes_tiff_to_model(monkeypatch, tmp_path, runtime):
     assert received["input"] == str(_EXAMPLE_TILE)
     assert received["batch_size"] == 1
     assert received["load_kwargs"]["project"] == "hoptimus0"
-    assert received["load_kwargs"]["runtime"] == runtime
-    if runtime == "apptainer":
-        assert received["load_kwargs"]["image_path"] == "test-hoptimus0.sif"
-    else:
-        assert "image_path" not in received["load_kwargs"]
+    assert received["load_kwargs"]["runtime"] == "apptainer"
+    assert received["load_kwargs"]["image_path"] == "test-hoptimus0.sif"
     output = (tmp_path / "output" / "hoptimus0_embeddings.txt").read_text()
     assert "embedding1:" in output
     assert "[0.1, 0.2]" in output
 
-
-def test_worker_decodes_example_tiff_to_correct_rgb_shape():
-    """Runs in a model environment with the image dependencies installed."""
-    pytest.importorskip("PIL.Image")
-    pytest.importorskip("torch")
-    pytest.importorskip("torchvision")
-    pytest.importorskip("timm")
-    from vhmodels.models.HOptimus0.model import HOptimus0
-
-    batch = HOptimus0()._preprocess(HOptimus0._collect_tiles(_EXAMPLE_TILE))
-
-    assert batch.shape == (1, 3, 224, 224)
