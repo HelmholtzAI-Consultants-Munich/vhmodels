@@ -60,22 +60,15 @@ sbatch "${HPC_SCRIPTS}/run_inference_gpu.sbatch" "${CONFIG}"
 
 ## Ray runtime (experimental)
 
-Instead of an Apptainer image, the [Ray runtime](../docs/ray.md) runs the model
-as a Ray actor in a uv venv under `VENV_DIR`. Both jobs need `uv` in `PATH` and
-`VHMODELS_PYTHON` pointing at the Python 3.11 driver environment with
-`vhmodels[cli,ray]` installed, because the venv must match its Python and Ray
-versions:
+| Script | Node | Does |
+| --- | --- | --- |
+| `build_ray_env.sbatch` | CPU | Builds the configured model's uv venv under `VENV_DIR`; needs `uv` in `PATH` |
+| `ray_cluster.sbatch` | Whole A100 MIG node (4 GPU slices), 30 min | Starts a Ray cluster with `ray symmetric-run` and keeps it up until `scancel` or the time limit |
 
-```bash
-export VHMODELS_PYTHON=/path/to/vhmodels/.venv/bin/python
-
-sbatch "${HPC_SCRIPTS}/build_ray_env.sbatch" "${CONFIG}"
-# After the build finishes:
-sbatch "${HPC_SCRIPTS}/run_inference_ray.sbatch" "${CONFIG}"
-```
-
-- `build_ray_env.sbatch` runs `vh-checker create-ray-env` on a CPU node. It reuses an up-to-date venv.
-- `run_inference_ray.sbatch` starts a single-node Ray head inside the GPU allocation. Its ports are derived from the job id and its temp dir is under `/localscratch`. It then runs the inference script with `RAY_ADDRESS`, `VHMODELS_RUNTIME=ray` and `VHMODELS_DEVICE=cuda:0` set. With `IMAGE_DIR`, it also sets `VHMODELS_IMAGE_PATH` and the same bind mounts as `run_inference.sbatch`, and the actor runs in the image from `build_apptainer.sbatch`; otherwise it sets `VHMODELS_VENV_DIR` and needs no bind mounts. Slurm stops the Ray cluster when the job ends.
+- Set `VHMODELS_PYTHON` to the Python 3.11 driver env with `vhmodels[cli,ray]`.
+- `ray_cluster.sbatch` uses `IMAGE_DIR`, `HF_CACHE_DIR`, `TORCH_CACHE_DIR`, `DATA_DIR`, `OUTPUT_DIR` and `VENV_DIR`; `MODEL` and `INFERENCE_SCRIPT` are chosen per job.
+- Actors run in the model images from `build_apptainer.sbatch` (`IMAGE_DIR`), or in venvs if `IMAGE_DIR` is unset.
+- Submitting jobs to the cluster: [docs/ray.md](../docs/ray.md#slurm-cluster).
 
 The conversion job defaults to `virtual-human-chc/prot_t5_xxl_bfd` on `main`. It requires a Hugging Face login that can open a PR on the model repository. To target another model or revision:
 

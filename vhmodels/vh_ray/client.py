@@ -16,21 +16,12 @@ def _driver_paths():
     return paths
 
 
-def _ray_binds():
-    """Return Ray's session dir and package dir, which a worker in an image needs."""
-    import ray
-
-    session_dir = ray._private.worker._global_node.get_session_dir_path()
-    return [session_dir, os.path.dirname(ray.__file__)]
-
-
 def _actor_options(project, load_kwargs, ray_options=None, image_path=None):
     """Run the actor in the model's venv or image, on a GPU for CUDA devices."""
     gpu = str(load_kwargs.get("device", "auto")).startswith("cuda")
     options = {"num_gpus": 1 if gpu else 0, **(ray_options or {})}
     if image_path:
-        gpu = options["num_gpus"] > 0
-        runtime_env = image_runtime_env(image_path, _ray_binds(), gpu)
+        runtime_env = image_runtime_env(image_path, options["num_gpus"] > 0)
     else:
         runtime_env = model_runtime_env(project)
     return {"runtime_env": runtime_env, **options}

@@ -21,7 +21,7 @@ load_kwargs = {
     "runtime": runtime,
     "device": os.environ.get("VHMODELS_DEVICE", "auto"),
 }
-if runtime == "apptainer" or (runtime == "ray" and "VHMODELS_IMAGE_PATH" in os.environ):
+if runtime == "apptainer":
     load_kwargs["image_path"] = os.environ.get(
         "VHMODELS_IMAGE_PATH", "vhmodels-hoptimus0.sif"
     )

@@ -23,6 +23,7 @@ _VERSIONS = {"python": "3.11.15", "ray": "2.59.0"}
 def isolated_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "uv-cache"))
     monkeypatch.setenv("VHMODELS_VENV_DIR", str(tmp_path / "venvs"))
+    monkeypatch.delenv("VHMODELS_IMAGE_DIR", raising=False)
     monkeypatch.setattr(envs, "driver_versions", lambda: dict(_VERSIONS))
 
 
@@ -197,15 +198,12 @@ def test_actor_options_request_a_gpu_for_cuda_devices(device, num_gpus):
 
 
 @pytest.mark.parametrize(("device", "nv"), [("cuda:0", ["--nv"]), ("cpu", [])])
-def test_actor_options_run_the_actor_in_an_image(monkeypatch, device, nv):
-    monkeypatch.setattr(client, "_ray_binds", lambda: ["/tmp/ray/session", "/ray"])
-
+def test_actor_options_run_the_actor_in_an_image(device, nv):
     options = client._actor_options("mole", {"device": device}, None, "/i/m.sif")
 
     assert options["runtime_env"] == {
         "py_executable": " ".join(
-            ["apptainer", "exec", *nv, "--bind", "/tmp/ray/session,/ray"]
-            + ["/i/m.sif", "/opt/venv/bin/python"]
+            ["apptainer", "exec", *nv, "/i/m.sif", "/opt/venv/bin/python"]
         )
     }
 
@@ -221,8 +219,14 @@ def test_load_model_with_image_skips_the_venv(monkeypatch, tmp_path):
         factory.load_model("mole", runtime="ray", image_path=image)
     image.touch()
     factory.load_model("mole", runtime="ray", image_path=image)
+    monkeypatch.setenv("VHMODELS_IMAGE_DIR", str(tmp_path))
+    (tmp_path / "vhmodels-mole.sif").touch()
+    factory.load_model("mole", runtime="ray")
 
-    assert created[0]["image_path"] == image
+    assert [kwargs["image_path"] for kwargs in created] == [
+        image,
+        tmp_path / "vhmodels-mole.sif",
+    ]
 
 
 def test_ray_options_override_actor_defaults():

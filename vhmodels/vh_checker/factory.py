@@ -204,8 +204,9 @@ def load_model(
     if runtime == "ray":
         # Ray is an optional extra, so it is only imported for this runtime.
         from vhmodels.vh_ray.client import RayModel
-        from vhmodels.vh_ray.envs import check_model_venv
+        from vhmodels.vh_ray.envs import check_model_venv, image_dir_path
 
+        image_path = image_path or image_dir_path(project)
         if image_path is None:
             check_model_venv(project, manifest)
         else:

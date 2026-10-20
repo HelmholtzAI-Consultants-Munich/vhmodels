@@ -1,26 +1,19 @@
 # Ray runtime (experimental)
 
-The Ray runtime runs each model as a [Ray](https://docs.ray.io) actor inside the
-model's own uv venv or Apptainer image. Ray replaces the Unix-socket worker and process manager
-used by the Conda and Apptainer runtimes. It starts actors, places them on CPUs
-and GPUs, serializes requests and results, and passes model errors back to the
-caller. The Conda and Apptainer runtimes are unchanged and remain the default.
+`runtime="ray"` runs each model as a [Ray](https://docs.ray.io) actor in the model's own Apptainer image or uv venv. The Conda and Apptainer runtimes are unchanged and remain the default.
 
 ```text
-driver (Python 3.11, vhmodels[ray]: ray[default]==2.59.0)
+driver (Python 3.11.15, vhmodels[ray]: ray[default]==2.59.0)
   vhmodels.load_model(project, model, runtime="ray", device=...)
     ├─ Registry.resolve_resources()   manifest + downloads, on the driver
     └─ RayModel                       vhmodels/vh_ray/client.py
-         ray.remote(ModelActor).options(runtime_env={"py_executable": <VENV_DIR>/<project>/bin/python})
+         ray.remote(ModelActor).options(runtime_env={"py_executable": <image or venv python>})
            └─ ModelActor              vhmodels/vh_ray/actor.py
-                └─ BaseModel.get_class(project)().load_model(variant, resources) / embed / predict
+                └─ model.load_model(variant, resources) / embed / predict
 ```
 
-`ModelActor` is an ordinary Ray actor class. It is a plain Python class, and
-`ray.remote(ModelActor)` turns it into an actor, the standard Ray pattern.
-Leaving the decorator off keeps the class usable as a Ray Serve deployment
-later. The class loads the model in `__init__` and calls the model's methods
-directly; no socket, message protocol or worker process manager is involved.
+- Ray starts the actors, places them on CPUs and GPUs, serializes requests and results, and returns model errors; there is no socket worker or process manager.
+- `ModelActor` is a plain class made an actor with `ray.remote(...)`, so it can also back a Ray Serve deployment later.
 
 ## Model venvs
 
@@ -66,17 +59,18 @@ On a cluster, put both on shared storage. The same `py_executable` path then wor
 
 ## Model images
 
-With `image_path`, the actor runs in the model's Apptainer image instead of its venv:
+The actor runs in the model's Apptainer image instead of its venv when an image is given:
 
-```python
-vhmodels.load_model(project="mole", runtime="ray", image_path="/images/vhmodels-mole.sif")
-```
+| Source | Image |
+| --- | --- |
+| `load_model(..., image_path=...)` | that file |
+| `VHMODELS_IMAGE_DIR` | `<dir>/vhmodels-<project>.sif`; must exist |
+| neither | the venv under `VHMODELS_VENV_DIR` |
 
-The actor's `py_executable` becomes `apptainer exec [--nv] --bind <Ray session dir>,<Ray package dir> <image> /opt/venv/bin/python`. Imports then come from the image's squashfs instead of the network filesystem, and one image serves both the Apptainer and the Ray runtime.
-
-- Every image installs Python `MODEL_PYTHON` and `ray==RAY_VERSION` (`vhmodels/utils/uv_utils.py`), which must equal the driver's exactly. Images built without Ray must be rebuilt.
-- The actor imports the vhmodels code baked into the image, as the Apptainer runtime does.
-- `--nv` is added when the actor requests a GPU. Other paths the model needs (caches, inputs, the working directory) are bound through `APPTAINER_BINDPATH`, which must be set before the Ray cluster starts: workers inherit the raylet's environment.
+- **Launch.** `py_executable` is `apptainer exec [--nv] <image> /opt/venv/bin/python`; `--nv` when the actor requests a GPU. Imports come from the image's squashfs, not the network filesystem.
+- **Versions.** Every image installs Python `MODEL_PYTHON` and `ray==RAY_VERSION` (`vhmodels/utils/uv_utils.py`), which must equal the driver's exactly.
+- **Code.** The actor imports the vhmodels code baked into the image.
+- **Bind mounts.** Ray's session dir (`/tmp/ray`) is mounted by default. The driver env (Ray's worker entrypoint), caches, inputs and outputs go in `APPTAINER_BINDPATH`, set before Ray starts; workers inherit the raylet's environment. `ray_cluster.sbatch` sets both.
 
 ## Quick start
 
@@ -104,11 +98,8 @@ with vhmodels.load_model(
 - **Actor options.** `ray_options={...}` is passed to `.options()`, for example `{"num_gpus": 0.5}`.
 - **Parallel calls.** `RayModel.actor` is the actor handle. Calls such as `model.actor.embed.remote(...)` return futures; [examples/ray/two_models.py](../examples/ray/two_models.py) uses them to run two models with conflicting dependencies concurrently.
 - **Same API as the other runtimes.** The scripts in [examples/](../examples/) run unchanged with `VHMODELS_RUNTIME=ray`.
-
-Unlike the other runtimes, the actor is created and starts loading as soon as `load_model` returns.
-
-- **Load time.** The first call waits for the load. Calls have no timeout by default; `RayModel(..., timeout=...)` sets one per call.
-- **Input paths.** Relative input paths still work because each request carries the caller's working directory; that requires a shared filesystem.
+- **Load time.** The actor starts loading when `load_model` returns; the first call waits for it. Calls have no timeout by default; `RayModel(..., timeout=...)` sets one.
+- **Input paths.** Relative input paths work because each request carries the caller's working directory (needs a shared filesystem).
 
 ### Start-up cost on network filesystems
 
@@ -120,28 +111,33 @@ On the HPC Lustre, importing Hyformer's tokenizer stack (`deepchem`) takes about
 
 ### Driver paths on worker `sys.path`
 
-Unless a job sets a runtime_env `working_dir`, Ray prepends the driver's script directory and working directory to every worker's `sys.path`, ahead of site-packages. A driver script named like a model dependency is then imported in its place. For example, `examples/hyformer.py` shadowed the `hyformer` package: the actor re-ran the example and deadlocked waiting on a nested actor.
-
-`RayModel` therefore passes these directories to `ModelActor`, which removes them from `sys.path` before loading the model. The actor class itself is imported earlier, so a driver directory containing another `vhmodels` checkout would still shadow the installed one.
+- Ray prepends the driver's script directory and working directory (a job's `working_dir`) to every worker's `sys.path`, so a script named like a model dependency shadows it. Example: `examples/hyformer.py` shadowed the `hyformer` package and deadlocked the actor.
+- `RayModel` passes these directories to `ModelActor`, which removes them from `sys.path` before loading the model.
 
 ### Authentication
 
-Ray 2.59 protects every cluster it starts with a token, stored in `~/.ray/auth_token`. A driver that *connects* to a running cluster sends the token only when `RAY_AUTH_MODE=token` is set.
+- Ray 2.59 protects every cluster with a token in `~/.ray/auth_token`.
+- Clients send it only with `RAY_AUTH_MODE=token`; `ray_cluster.sbatch` sets it for the cluster, set it yourself on the login node.
 
-`run_inference_ray.sbatch` sets this for the whole job. Keep authentication on: other users on shared nodes can reach the cluster's ports.
+## Slurm cluster
 
-## Slurm
+[`hpc-job-submit/ray_cluster.sbatch`](../hpc-job-submit/ray_cluster.sbatch) starts a long-lived cluster with [`ray symmetric-run`](https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html); scripts run on it as [Ray Jobs](https://docs.ray.io/en/latest/cluster/running-applications/job-submission/quickstart.html).
 
-See [hpc-job-submit/README.md](../hpc-job-submit/README.md):
+| Step | Command (login node) |
+| --- | --- |
+| Start | `sbatch hpc-job-submit/ray_cluster.sbatch /abs/config.json`; the log prints the head node |
+| Connect | `export PATH=<repo>/.venv/bin:$PATH RAY_AUTH_MODE=token RAY_ADDRESS=http://<head>:8265` |
+| Submit | `ray job submit --working-dir examples -- python mole.py` |
+| Monitor | `ray job list`, `ray job logs -f <id>`, dashboard at `http://<head>:8265` |
+| Cancel a job | `ray job stop <id>` |
+| Stop the cluster | `scancel <cluster job id>` (default time limit: 30 min) |
 
-- `build_ray_env.sbatch` builds the venv of the configured model.
-- `run_inference_ray.sbatch` starts a single-node Ray head inside a GPU allocation and runs the inference script against it.
-
-Notes on `run_inference_ray.sbatch`:
-
-- **Ports.** The GCS, Ray Client and dashboard-agent ports have fixed defaults and the worker port range is shared by every cluster on a node, so the script derives them from the job id. All other ports are random.
-- **Temp dir.** Ray creates Unix sockets under `<temp-dir>/session_<timestamp>/sockets/`, and those paths must stay under 108 bytes. That leaves about 40 bytes for the temp dir, so the script falls back from `/localscratch/$USER/ray-<job>` to `/tmp/ray-<job>` when needed.
-- **Shutdown.** Slurm stops the cluster when the job ends.
+- **Scripts are unchanged.** `load_model(runtime="ray")` inside a job connects to the cluster; `--no-wait` returns right after submitting.
+- **Inherited environment.** Jobs and actors get the caches, `VHMODELS_RUNTIME=ray`, `VHMODELS_DEVICE=cuda:0`, `VHMODELS_IMAGE_DIR`, `VHMODELS_DATA_DIR` and `VHMODELS_OUTPUT_DIR` from the config. Per-job settings go in `--runtime-env-json`.
+- **Paths.** Model images see only `DATA_DIR`, `OUTPUT_DIR` and the caches, so inputs and outputs must live there.
+- **GPUs.** The node's 2 A100s are split into 4 isolated MIG slices (`3g.20gb`); Ray counts them as `GPU: 4`. Each model actor takes one slice, so up to 4 models run at once; the head and job drivers use CPUs only.
+- **Whole node.** `symmetric-run` refuses to start next to another Ray instance and runs `ray stop` at the end, so the job is `--exclusive` (as in Ray's Slurm guide) and Ray's default ports work.
+- **Multi-node.** Raise `--nodes`; `symmetric-run` starts Ray on every node and waits for all of them.
 
 ## Checks
 
@@ -149,7 +145,7 @@ Notes on `run_inference_ray.sbatch`:
 
 ## Roadmap
 
-1. **Multi-node Slurm.** Use `srun ray symmetric-run` (Ray ≥ 2.49), and add GPU-type resources.
+1. **Multi-node Slurm.** Test `ray_cluster.sbatch` across nodes, and add GPU-type resources.
 2. **Registry integration.** Add an optional `resources` block to `model.json` next to `runtimes.uv` (read only by `utils.uv_utils.model_uv_spec`). Add `create-ray-env --all`, then make Ray the default runtime and retire Conda and Apptainer.
 3. **Ray Serve.** `ModelActor` loads its model in `__init__`, so it can back a deployment directly. Pass the same `runtime_env` in `ray_actor_options`, add `ray[serve]` to the model venvs, and put a FastAPI ingress in front.
 4. **Kubernetes (KubeRay).** Bake the driver env and the model venvs into one image at a fixed `VHMODELS_VENV_DIR`. The `py_executable` mechanism stays the same.
