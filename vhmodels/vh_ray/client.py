@@ -1,11 +1,11 @@
-"""Host-side handle for a model running as a Ray actor in its own uv venv."""
+"""Host-side handle for a model running as a Ray actor in its own venv or image."""
 
 import os
 import sys
 
 from vhmodels.vh_checker.factory import _unwrap_model_result
 from vhmodels.vh_ray.actor import ModelActor
-from vhmodels.vh_ray.envs import model_runtime_env
+from vhmodels.vh_ray.envs import image_runtime_env, model_runtime_env
 
 
 def _driver_paths():
@@ -16,14 +16,24 @@ def _driver_paths():
     return paths
 
 
-def _actor_options(project, load_kwargs, ray_options=None):
-    """Run the actor in the model's venv, on a GPU for CUDA devices."""
+def _ray_binds():
+    """Return Ray's session dir and package dir, which a worker in an image needs."""
+    import ray
+
+    session_dir = ray._private.worker._global_node.get_session_dir_path()
+    return [session_dir, os.path.dirname(ray.__file__)]
+
+
+def _actor_options(project, load_kwargs, ray_options=None, image_path=None):
+    """Run the actor in the model's venv or image, on a GPU for CUDA devices."""
     gpu = str(load_kwargs.get("device", "auto")).startswith("cuda")
-    return {
-        "num_gpus": 1 if gpu else 0,
-        "runtime_env": model_runtime_env(project),
-        **(ray_options or {}),
-    }
+    options = {"num_gpus": 1 if gpu else 0, **(ray_options or {})}
+    if image_path:
+        gpu = options["num_gpus"] > 0
+        runtime_env = image_runtime_env(image_path, _ray_binds(), gpu)
+    else:
+        runtime_env = model_runtime_env(project)
+    return {"runtime_env": runtime_env, **options}
 
 
 class RayModel:
@@ -37,6 +47,7 @@ class RayModel:
         load_kwargs=None,
         ray_options=None,
         timeout=None,
+        image_path=None,
     ):
         import ray
 
@@ -48,7 +59,7 @@ class RayModel:
         load_kwargs = load_kwargs or {}
         self.actor = (
             ray.remote(ModelActor)
-            .options(**_actor_options(project, load_kwargs, ray_options))
+            .options(**_actor_options(project, load_kwargs, ray_options, image_path))
             .remote(project, model, resources, load_kwargs, _driver_paths())
         )
 

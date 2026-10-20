@@ -17,10 +17,11 @@ def uv_build_cache_dir():
     return (cache_root / "vhmodels" / "apptainer" / "uv").resolve()
 
 
-# Python minor version of every model environment (Apptainer images and Ray
-# venvs). A Ray worker must run the driver's Python, so it is the same for all
-# models and must match the repository's .python-version.
-MODEL_PYTHON = "3.11"
+# Python and Ray of every model environment (Apptainer images and Ray venvs).
+# Ray workers must match the driver exactly, so these must match the
+# repository's .python-version and the ray extra in pyproject.toml.
+MODEL_PYTHON = "3.11.15"
+RAY_VERSION = "2.59.0"
 
 
 @dataclass(frozen=True)

@@ -17,10 +17,10 @@ config per model, and fill in absolute paths available on the compute nodes.
 
 | Setting | Purpose |
 | --- | --- |
-| `IMAGE_DIR` | Stores the built `.sif` image |
+| `IMAGE_DIR` | Stores the built `.sif` image; with the Ray runtime, actors run in it when set |
 | `APPTAINER_CACHEDIR` | Host cache for the Ubuntu and uv base image layers |
 | `UV_CACHE_DIR` | Host cache for Python packages and the managed Python used during image builds |
-| `VENV_DIR` | Ray runtime only: stores one uv venv per model |
+| `VENV_DIR` | Ray runtime without `IMAGE_DIR`: stores one uv venv per model |
 | `HF_CACHE_DIR` | Hugging Face model cache; weights go to `<HF_CACHE_DIR>/hub`, while the login token stays in `~/.cache/huggingface` |
 | `TORCH_CACHE_DIR` | PyTorch model cache |
 | `MODEL` | Registered model ID |
@@ -75,7 +75,7 @@ sbatch "${HPC_SCRIPTS}/run_inference_ray.sbatch" "${CONFIG}"
 ```
 
 - `build_ray_env.sbatch` runs `vh-checker create-ray-env` on a CPU node. It reuses an up-to-date venv.
-- `run_inference_ray.sbatch` starts a single-node Ray head inside the GPU allocation. Its ports are derived from the job id and its temp dir is under `/localscratch`. It then runs the inference script with `RAY_ADDRESS`, `VHMODELS_RUNTIME=ray`, `VHMODELS_VENV_DIR` and `VHMODELS_DEVICE=cuda:0` set. No bind mounts are needed. Slurm stops the Ray cluster when the job ends.
+- `run_inference_ray.sbatch` starts a single-node Ray head inside the GPU allocation. Its ports are derived from the job id and its temp dir is under `/localscratch`. It then runs the inference script with `RAY_ADDRESS`, `VHMODELS_RUNTIME=ray` and `VHMODELS_DEVICE=cuda:0` set. With `IMAGE_DIR`, it also sets `VHMODELS_IMAGE_PATH` and the same bind mounts as `run_inference.sbatch`, and the actor runs in the image from `build_apptainer.sbatch`; otherwise it sets `VHMODELS_VENV_DIR` and needs no bind mounts. Slurm stops the Ray cluster when the job ends.
 
 The conversion job defaults to `virtual-human-chc/prot_t5_xxl_bfd` on `main`. It requires a Hugging Face login that can open a PR on the model repository. To target another model or revision:
 
