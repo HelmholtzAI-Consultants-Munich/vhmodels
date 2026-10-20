@@ -1,4 +1,4 @@
-"""Run Hyformer and ProtTrans concurrently as Ray actors, each in its own uv venv."""
+"""Run Hyformer and ProtTrans concurrently as Ray actors, each in its own image or venv."""
 
 import os
 from pathlib import Path

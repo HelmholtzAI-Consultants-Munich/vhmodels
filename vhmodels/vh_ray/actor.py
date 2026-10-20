@@ -1,4 +1,4 @@
-"""Ray actor class that loads and serves one model inside its per-model venv."""
+"""Ray actor class that loads and serves one model in its own image or venv."""
 
 import os
 import socket

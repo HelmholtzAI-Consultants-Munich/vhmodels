@@ -143,13 +143,21 @@ def check_model_venv(project, manifest, repo_root=None):
         )
 
 
+def image_dir_path(project):
+    """Return the model's image in ``$VHMODELS_IMAGE_DIR``, or None if that is unset."""
+    root = os.environ.get("VHMODELS_IMAGE_DIR")
+    if not root:
+        return None
+    return Path(root).expanduser().resolve() / f"vhmodels-{project}.sif"
+
+
 def model_runtime_env(project):
     """Return the Ray runtime_env that runs an actor in the model's venv."""
     return {"py_executable": str(venv_dir(project) / "bin" / "python")}
 
 
-def image_runtime_env(image_path, binds, gpu=False):
+def image_runtime_env(image_path, gpu=False):
     """Return the Ray runtime_env that runs an actor in the model's Apptainer image."""
     command = ["apptainer", "exec", *(["--nv"] if gpu else [])]
-    command += ["--bind", ",".join(binds), str(image_path), "/opt/venv/bin/python"]
+    command += [str(image_path), "/opt/venv/bin/python"]
     return {"py_executable": shlex.join(command)}

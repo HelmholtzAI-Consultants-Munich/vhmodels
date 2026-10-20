@@ -70,9 +70,9 @@ its GPU to the container. The Lima path on macOS is CPU-only.
 
 ### Ray runtime (experimental)
 
-`runtime="ray"` runs the model as a Ray actor inside a per-model uv venv built
-from the same dependency spec as the Apptainer image. It needs uv on the host
-and a Python 3.11 driver environment with `vhmodels[ray]`:
+`runtime="ray"` runs the model as a Ray actor in its Apptainer image or in a
+per-model uv venv, both built from the model's `runtimes.uv` spec. It needs a
+Python 3.11 driver environment with `vhmodels[ray]` (and uv for venvs):
 
 ```bash
 uv venv --managed-python --python 3.11 .venv
