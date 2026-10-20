@@ -58,7 +58,13 @@ export DISABLE_SAFETENSORS_CONVERSION=true
 mkdir -p "${HF_HUB_CACHE}" "${TORCH_HOME}"
 
 export VHMODELS_RUNTIME="ray"
-export VHMODELS_VENV_DIR="$(jq -er '.VENV_DIR' "${CONFIG_FILE}")"
+# Actors run in the model's Apptainer image when IMAGE_DIR is set, else in its venv.
+IMAGE_DIR="$(jq -r '.IMAGE_DIR // empty' "${CONFIG_FILE}")"
+if [[ -n "${IMAGE_DIR}" ]]; then
+    export VHMODELS_IMAGE_PATH="${IMAGE_DIR}/vhmodels-${MODEL}.sif"
+else
+    export VHMODELS_VENV_DIR="$(jq -er '.VENV_DIR' "${CONFIG_FILE}")"
+fi
 # A cuda device makes the model's actor request one GPU.
 export VHMODELS_DEVICE="cuda:0"
 
@@ -83,6 +89,11 @@ if [[ -n "${DATA_DIR}" ]]; then
     fi
     export VHMODELS_DATA_DIR="$(realpath -e "${DATA_DIR}")"
 fi
+if [[ -n "${IMAGE_DIR}" ]]; then
+    INFERENCE_DIR="$(dirname "${INFERENCE_SCRIPT}")"
+    BINDS="${VHMODELS_OUTPUT_DIR},${INFERENCE_DIR},${HF_HUB_CACHE},${TORCH_HOME}${VHMODELS_DATA_DIR:+,${VHMODELS_DATA_DIR}}"
+    export APPTAINER_BINDPATH="${APPTAINER_BINDPATH:+${APPTAINER_BINDPATH},}${BINDS}"
+fi
 cd "${VHMODELS_OUTPUT_DIR}"
 
 if ! "${PYTHON_BIN}" -c 'import vhmodels; print("Using vhmodels from", vhmodels.__file__)'; then
@@ -94,6 +105,8 @@ fi
 NUM_GPUS="$(awk -F, '{print NF}' <<< "${CUDA_VISIBLE_DEVICES:-}")"
 HEAD_IP="$(hostname -i | awk '{print $1}')"
 RAY_PORT=$((20000 + (SLURM_JOB_ID % 1000) * 10))
+# Worker ports too: Ray's default range is shared by every cluster on the node.
+WORKER_PORT=$((10000 + (SLURM_JOB_ID % 250) * 40))
 # Ray's socket paths must stay under 108 bytes (see docs/ray.md).
 RAY_TMP_DIR="/localscratch/${USER}/ray-${SLURM_JOB_ID}"
 if (( ${#RAY_TMP_DIR} > 40 )); then
@@ -107,6 +120,8 @@ export RAY_AUTH_MODE=token
     --port="${RAY_PORT}" \
     --ray-client-server-port=$((RAY_PORT + 1)) \
     --dashboard-agent-listen-port=$((RAY_PORT + 2)) \
+    --min-worker-port="${WORKER_PORT}" \
+    --max-worker-port=$((WORKER_PORT + 39)) \
     --num-cpus="${SLURM_CPUS_PER_TASK}" \
     --num-gpus="${NUM_GPUS}" \
     --temp-dir="${RAY_TMP_DIR}" \

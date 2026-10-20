@@ -13,7 +13,7 @@ from rich.table import Table
 
 from vhmodels.models.registry import REGISTRY
 from vhmodels.utils import lima_utils
-from vhmodels.utils.uv_utils import MODEL_PYTHON, model_uv_spec
+from vhmodels.utils.uv_utils import MODEL_PYTHON, RAY_VERSION, model_uv_spec
 from vhmodels.utils.uv_utils import uv_build_cache_dir as _uv_build_cache_dir
 
 
@@ -284,6 +284,7 @@ def create_apptainer_image(project, output):
         "{project}": project,
         "{model_dir}": target_dir.name,
         "{python_version}": MODEL_PYTHON,
+        "{ray_version}": RAY_VERSION,
         "{requirements_file}": requirements_path.name,
         "{torch_backend_arg}": (
             f"--torch-backend {torch_backend}" if torch_backend else ""

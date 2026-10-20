@@ -196,15 +196,22 @@ def load_model(
         # cannot silently select a different image.
         image_path = image_path or f"{env_name}.sif"
         env_name = str(Path(image_path).expanduser().resolve())
-    elif image_path is not None:
-        raise ValueError("image_path can only be used with runtime='apptainer'.")
+    elif image_path is not None and runtime != "ray":
+        raise ValueError(
+            "image_path can only be used with runtime='apptainer' or runtime='ray'."
+        )
 
     if runtime == "ray":
         # Ray is an optional extra, so it is only imported for this runtime.
         from vhmodels.vh_ray.client import RayModel
         from vhmodels.vh_ray.envs import check_model_venv
 
-        check_model_venv(project, manifest)
+        if image_path is None:
+            check_model_venv(project, manifest)
+        else:
+            image_path = Path(image_path).expanduser().resolve()
+            if not image_path.is_file():
+                raise RuntimeError(f"Apptainer image '{image_path}' does not exist.")
         variant, resources = _resolve_resources(project, model)
         return RayModel(
             project=project,
@@ -212,6 +219,7 @@ def load_model(
             resources=resources,
             load_kwargs=load_kwargs,
             ray_options=ray_options,
+            image_path=image_path,
         )
     if ray_options is not None:
         raise ValueError("ray_options can only be used with runtime='ray'.")

@@ -21,7 +21,7 @@ from vhmodels.models import discovery
 from vhmodels.models.registry import REGISTRY, Registry
 from vhmodels.models.schema import Runtimes, Source
 from vhmodels.models.source_resolver import SourceResolver
-from vhmodels.utils.uv_utils import MODEL_PYTHON, model_uv_spec
+from vhmodels.utils.uv_utils import MODEL_PYTHON, RAY_VERSION, model_uv_spec
 
 _SOURCE_ADAPTER = TypeAdapter(Source)
 
@@ -51,9 +51,12 @@ def test_git_source_requires_a_revision(revision):
         )
 
 
-def test_model_python_matches_repository_python_version():
-    python_version = Path(__file__).resolve().parents[1] / ".python-version"
-    assert python_version.read_text(encoding="utf-8").strip() == MODEL_PYTHON
+def test_model_python_and_ray_match_the_repository():
+    root = Path(__file__).resolve().parents[1]
+    python_version = (root / ".python-version").read_text(encoding="utf-8")
+    assert python_version.strip() == MODEL_PYTHON
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert f'ray = ["ray[default]=={RAY_VERSION}"]' in pyproject
 
 
 # --- dependency boundaries: what model environments may import --------------

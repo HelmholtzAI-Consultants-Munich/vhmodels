@@ -168,7 +168,8 @@ def test_create_apptainer_image_uses_model_uv_dependencies(
 
     assert result.exit_code == 0
     assert f"models/{model_dir}/requirements.linux-x86_64.txt" in captured["definition"]
-    assert '"cpython-3.11-linux-x86_64-gnu"' in captured["definition"]
+    assert '"cpython-3.11.15-linux-x86_64-gnu"' in captured["definition"]
+    assert "requirements.linux-x86_64.txt ray==2.59.0" in captured["definition"]
     if torch_backend is None:
         assert "--torch-backend" not in captured["definition"]
     else:
@@ -234,7 +235,7 @@ def test_create_apptainer_image_uses_lima_and_amd64_on_macos(
     assert captured["command"][15] == str(output_path.resolve())
     assert captured["kwargs"]["cwd"].parent == output_path.parent
     assert "models/Hyformer/requirements.linux-x86_64.txt" in captured["definition"]
-    assert '"cpython-3.11-linux-x86_64-gnu"' in captured["definition"]
+    assert '"cpython-3.11.15-linux-x86_64-gnu"' in captured["definition"]
     assert "--torch-backend cu118" in captured["definition"]
 
 

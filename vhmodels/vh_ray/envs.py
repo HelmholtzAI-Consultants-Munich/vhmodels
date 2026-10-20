@@ -5,6 +5,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 import warnings
@@ -99,7 +100,7 @@ def build_model_venv(
             raise FileNotFoundError(f"'{project}' dependency file not found: {path}")
 
     fingerprint = _fingerprint(manifest, repo_root)
-    if not fingerprint["python"].startswith(f"{MODEL_PYTHON}."):
+    if fingerprint["python"] != MODEL_PYTHON:
         warnings.warn(
             f"Model environments use Python {MODEL_PYTHON}; "
             f"building '{project}' with the driver's {fingerprint['python']}."
@@ -145,3 +146,10 @@ def check_model_venv(project, manifest, repo_root=None):
 def model_runtime_env(project):
     """Return the Ray runtime_env that runs an actor in the model's venv."""
     return {"py_executable": str(venv_dir(project) / "bin" / "python")}
+
+
+def image_runtime_env(image_path, binds, gpu=False):
+    """Return the Ray runtime_env that runs an actor in the model's Apptainer image."""
+    command = ["apptainer", "exec", *(["--nv"] if gpu else [])]
+    command += ["--bind", ",".join(binds), str(image_path), "/opt/venv/bin/python"]
+    return {"py_executable": shlex.join(command)}
