@@ -24,12 +24,12 @@ def main():
 
 console = Console()
 
-_APPTAINER_UV_CACHE_DEST = "/opt/vhmodels-build-cache"
+_UV_BUILD_CACHE_DEST = "/opt/uv-cache"
 
 
-def _apptainer_uv_cache_dir():
-    """Return the persistent, per-user cache used by uv image builds."""
-    configured = os.environ.get("VHMODELS_APPTAINER_CACHE_DIR")
+def _uv_build_cache_dir():
+    """Return the host uv cache mounted during Apptainer image builds."""
+    configured = os.environ.get("UV_CACHE_DIR")
     if configured:
         return Path(configured).expanduser().resolve()
 
@@ -266,12 +266,12 @@ def create_apptainer_image(project, output):
             "so Lima can access it."
         )
 
-    uv_cache_path = _apptainer_uv_cache_dir()
+    uv_cache_path = _uv_build_cache_dir()
     if use_lima and not lima_utils.is_lima_shared_path(uv_cache_path):
         raise click.ClickException(
-            "On macOS, the Apptainer build cache must be under your home "
+            "On macOS, the uv build cache must be under your home "
             "directory so Lima can access it. Set "
-            "VHMODELS_APPTAINER_CACHE_DIR to a path under your home directory."
+            "UV_CACHE_DIR to a path under your home directory."
         )
 
     if use_lima:
@@ -337,7 +337,7 @@ def create_apptainer_image(project, output):
                 ]
             build_command += [
                 "--bind",
-                f"{uv_cache_path}:{_APPTAINER_UV_CACHE_DEST}",
+                f"{uv_cache_path}:{_UV_BUILD_CACHE_DEST}",
                 str(image_path),
                 str(definition_path),
             ]
