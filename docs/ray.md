@@ -121,23 +121,29 @@ On the HPC Lustre, importing Hyformer's tokenizer stack (`deepchem`) takes about
 
 ## Slurm cluster
 
-[`hpc-job-submit/ray_cluster.sbatch`](../hpc-job-submit/ray_cluster.sbatch) starts a long-lived cluster with [`ray symmetric-run`](https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html); scripts run on it as [Ray Jobs](https://docs.ray.io/en/latest/cluster/running-applications/job-submission/quickstart.html).
+[`hpc-job-submit/ray_cluster.sbatch`](../hpc-job-submit/ray_cluster.sbatch) starts a long-lived single-node cluster with `ray start --head --block`, following the multi-user setup in [Ray's Slurm guide](https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html); scripts run on it as [Ray Jobs](https://docs.ray.io/en/latest/cluster/running-applications/job-submission/quickstart.html).
 
 | Step | Command (login node) |
 | --- | --- |
-| Start | `sbatch hpc-job-submit/ray_cluster.sbatch /abs/config.json`; the log prints the head node |
-| Connect | `export PATH=<repo>/.venv/bin:$PATH RAY_AUTH_MODE=token RAY_ADDRESS=http://<head>:8265` |
+| Start | `sbatch hpc-job-submit/ray_cluster.sbatch /abs/config.json`; the log prints `RAY_ADDRESS` |
+| Connect | `export PATH=<repo>/.venv/bin:$PATH RAY_AUTH_MODE=token RAY_ADDRESS=<from the log>` |
 | Submit | `ray job submit --working-dir examples -- python mole.py` |
-| Monitor | `ray job list`, `ray job logs -f <id>`, dashboard at `http://<head>:8265` |
+| Monitor | `ray job list`, `ray job logs -f <id>`, dashboard at `RAY_ADDRESS` |
 | Cancel a job | `ray job stop <id>` |
 | Stop the cluster | `scancel <cluster job id>` (default time limit: 30 min) |
 
 - **Scripts are unchanged.** `load_model(runtime="ray")` inside a job connects to the cluster; `--no-wait` returns right after submitting.
 - **Inherited environment.** Jobs and actors get the caches, `VHMODELS_RUNTIME=ray`, `VHMODELS_DEVICE=cuda:0`, `VHMODELS_IMAGE_DIR`, `VHMODELS_DATA_DIR` and `VHMODELS_OUTPUT_DIR` from the config. Per-job settings go in `--runtime-env-json`.
 - **Paths.** Model images see only `DATA_DIR`, `OUTPUT_DIR` and the caches, so inputs and outputs must live there.
-- **GPUs.** The node's 2 A100s are split into 4 isolated MIG slices (`3g.20gb`); Ray counts them as `GPU: 4`. Each model actor takes one slice, so up to 4 models run at once; the head and job drivers use CPUs only.
-- **Whole node.** `symmetric-run` refuses to start next to another Ray instance and runs `ray stop` at the end, so the job is `--exclusive` (as in Ray's Slurm guide) and Ray's default ports work.
-- **Multi-node.** Raise `--nodes`; `symmetric-run` starts Ray on every node and waits for all of them.
+- **GPUs.** Default: 2 GPUs of any type the model images support, via `--constraint`; Ray counts `GPU: 2`. Each model actor takes one GPU; the head and job drivers use CPUs only. Other GPUs: e.g. `sbatch --gres=gpu:a100_3g.20gb:2 ...` for A100 MIG slices (longer queue).
+- **No B300.** The model images' PyTorch builds have no kernels for B300 (`no kernel image is available`), so the constraint leaves those nodes out.
+- **Shared node.** Whole nodes wait hours, so the job shares its node. Ports and the temp dir (`/tmp/ray-<job id>`) come from the job id, as Ray's guide requires for several Ray clusters on one node. Only the dashboard port must be reachable from the login node.
+
+| Firewall (measured 2026-10-22) | Open TCP ports |
+| --- | --- |
+| Login node → compute node | 8000–9000, 60001–64000 |
+| Compute node ↔ compute node | 60001–64000 |
+- **Single node.** Multi-node needs workers joining with `ray start --address=<head> --block`; see the roadmap.
 
 ## Checks
 
@@ -145,7 +151,7 @@ On the HPC Lustre, importing Hyformer's tokenizer stack (`deepchem`) takes about
 
 ## Roadmap
 
-1. **Multi-node Slurm.** Test `ray_cluster.sbatch` across nodes, and add GPU-type resources.
+1. **Multi-node Slurm.** Let GPU jobs join the cluster as workers (`ray start --address=<head> --block`), with the head on a CPU node, and add GPU-type resources. Every Ray port must then be in 60001–64000.
 2. **Registry integration.** Add an optional `resources` block to `model.json` next to `runtimes.uv` (read only by `utils.uv_utils.model_uv_spec`). Add `create-ray-env --all`, then make Ray the default runtime and retire Conda and Apptainer.
 3. **Ray Serve.** `ModelActor` loads its model in `__init__`, so it can back a deployment directly. Pass the same `runtime_env` in `ray_actor_options`, add `ray[serve]` to the model venvs, and put a FastAPI ingress in front.
 4. **Kubernetes (KubeRay).** Bake the driver env and the model venvs into one image at a fixed `VHMODELS_VENV_DIR`. The `py_executable` mechanism stays the same.
