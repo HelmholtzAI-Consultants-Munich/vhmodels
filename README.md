@@ -68,22 +68,15 @@ elsewhere. The CLI equivalent is
 Set `APPTAINER_NV=1` when running directly on an NVIDIA Linux/HPC host to expose
 its GPU to the container. The Lima path on macOS is CPU-only.
 
-### Run the Nicheformer HPC example
+### Example scripts
 
-The repository-level [`test.py`](test.py) is an example inference script for
-Nicheformer, matching the default `MODEL` value in
-`hpc-job-submit/config.json`. It reads `VHMODELS_DATA_DIR` when set and otherwise
-uses the repository's `example_data/`. The Slurm templates can also run a custom
-Python inference script from any submission directory.
+The repository-level [`test.py`](test.py) runs the Nicheformer example, matching
+the default `MODEL` in `hpc-job-submit/config.json`. The example inference
+scripts for the other models are under [`examples/`](examples/). All of them can
+be used as `INFERENCE_SCRIPT` in the
+[HPC job submission guide](hpc-job-submit/README.md).
 
-For apptainer, run it from the repository root after building the Nicheformer image:
-
-```bash
-python test.py
-```
-
-See the [HPC job submission guide](hpc-job-submit/README.md) for the Slurm
-workflow, including use from an installed package.
+### Model lifetime
 
 Both Conda- and Apptainer-backed models start one worker lazily on their first
 `embed()` call. The model is loaded once in that worker and reused by later
@@ -204,7 +197,7 @@ print(results)
 ```
 
 ## Adding models
-If you want to add your own model to `vhmodels`, please follow our [contribution guideline](model_contribution.md).
+If you want to add your own model to `vhmodels`, please follow our [contribution guideline](docs/model_contribution.md).
 
 ## Installing AI skills
 
@@ -222,17 +215,21 @@ For more details:
 
 ```text
 vhmodels
-├───example_data # Example inputs/outputs (also available on Hugging Face)
-│   ├───DinoBloom
-│   └───MolE
-├───notebooks # Example notebooks demonstrating usage
-├───tests # Tests for core model functionality
+├───.claude-plugin # Plugin/marketplace metadata for the AI skills
+├───docs # Manifest reference and model contribution guide
+├───example_data # Example inputs per model
+├───examples # Example inference scripts (local or HPC)
+├───hpc-job-submit # Slurm scripts + config template for Apptainer on HPC
+├───skills # AI agent skills (model-search, model-embed)
+├───tests # Unit and integration tests
 └───vhmodels
     ├───envs # Template for Apptainer environments
     ├───models # Implementations + Conda/uv dependencies + manifests
     │   ├───DinoBloom # model.json, manifests/<variant>.json, model.py, ...
+    │   ├───HOptimus0
     │   ├───Hyformer
     │   ├───MolE
+    │   ├───Nicheformer
     │   ├───ProtTrans
     │   ├───registry.py # Registry: discovers + resolves manifests
     │   ├───schema.py # Pydantic manifest schema

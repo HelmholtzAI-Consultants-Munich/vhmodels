@@ -97,6 +97,8 @@ vh-checker create-env dinobloom    # → vhmodels-dinobloom
 vh-checker create-env hyformer
 vh-checker create-env prottrans
 vh-checker create-env mole
+vh-checker create-env hoptimus0
+vh-checker create-env nicheformer
 ```
 
 The first environment/image build and model run can download large dependencies
