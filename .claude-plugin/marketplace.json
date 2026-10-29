@@ -5,7 +5,7 @@
       {
         "name": "vhmodels",
         "source": ".",
-        "description": "Helmholtz Munich model zoo — DinoBloom, Hyformer, ProtTrans, MolE"
+        "description": "Helmholtz Munich model zoo — DinoBloom, H-Optimus-0, Hyformer, MolE, Nicheformer, ProtTrans"
       }
     ]
 }

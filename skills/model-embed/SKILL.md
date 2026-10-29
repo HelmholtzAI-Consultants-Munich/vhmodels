@@ -1,6 +1,6 @@
 ---
 name: model-embed
-description: Runs VH CHC model embeddings (DinoBloom, Hyformer, ProtTrans, MolE) via vhmodels load_model/embed and isolated Conda or Apptainer runtimes. Use when embedding images, proteins, peptides, or molecules; creating a model environment or image; or after model-search selected a project. Triggers on embed, load_model, create-env, create-apptainer-image, vh-checker, vhmodels runtime setup.
+description: Runs VH CHC model embeddings (DinoBloom, H-Optimus-0, Hyformer, ProtTrans, MolE, Nicheformer) via vhmodels load_model/embed and isolated Conda or Apptainer runtimes. Use when embedding images, proteins, peptides, molecules, or spatial transcriptomics; creating a model environment or image; or after model-search selected a project. Triggers on embed, load_model, create-env, create-apptainer-image, vh-checker, vhmodels runtime setup.
 ---
 
 # VH model embed
@@ -18,7 +18,7 @@ as **model-search**).
 - **Before embed:** use `conda --version`, `apptainer --version` on Linux, or `limactl --version` on macOS; then `vh-checker create-env <project>` (conda) or `vh-checker create-apptainer-image <project>` (Apptainer).
 - **Host requirements:** Apptainer on Linux/HPC; Lima on macOS. Host uv is not required.
 - **Miniforge / conda-forge** — not Anaconda Miniconda (org licensing blocks).
-- v0.1: **`embed` only**; `predict` / `generate` are stubs.
+- v0.1: **`embed`** for all models; `predict` only for MolE; `generate` is a stub.
 - First run: large downloads + GPU optional — warn user.
 - **Docker not supported.** Use Conda (default) or Apptainer.
 
@@ -55,7 +55,17 @@ model = vhmodels.load_model(project="prottrans", model="prot_t5_xl_uniref50")
 model.embed(input=["MKVILLLLAVVAFGHALCRV", "PRTEINO"])
 
 model = vhmodels.load_model(project="mole")
-model.embed(input="example_data/MolE/sequences.smiles")  # path to .smiles file
+model.embed(input="example_data/MolE/examples_molecules.tsv")  # chem_name/smiles TSV
+model.predict(input="example_data/MolE/examples_molecules.tsv")  # antimicrobial activity
+
+model = vhmodels.load_model(project="hoptimus0")  # gated: needs HF login
+model.embed(input="example_data/H-Optimus-0/TUM-AACHEHDV.tif")  # 224x224 H&E tile(s)
+
+model = vhmodels.load_model(project="nicheformer")
+model.embed(input={
+    "technology_mean": "example_data/Nicheformer/xenium_mean_script.npy",
+    "data": "example_data/Nicheformer/preprocessed/Xenium_Preview_Human_Non_diseased_Lung_With_Add_on_FFPE_outs_sample-1000.h5ad",
+}, max_cells=4)  # omit max_cells to embed all cells
 
 model = vhmodels.load_model(project="mole", runtime="apptainer")
 ```
@@ -67,9 +77,11 @@ Returns a list from subprocess JSON `output`. Example data: repo `example_data/`
 | Project | `embed(input=…)` |
 |---------|------------------|
 | `dinobloom` | Image path, image directory, or list of paths |
-| `hyformer` | **List of SMILES strings** |
+| `hoptimus0` | 224x224 H&E tile path, tile directory, or list of paths |
+| `hyformer` | **List of SMILES strings** (molecule variants) or **peptide sequences** (peptide variants) |
 | `prottrans` | **List of protein sequences** |
-| `mole` | **Path to `.smiles` file** |
+| `mole` | **Path to TSV with `chem_name` and `smiles` columns** |
+| `nicheformer` | **Dict** with `technology_mean` (`.npy`) and `data` (`.h5ad`) paths |
 
 ## Scripts
 

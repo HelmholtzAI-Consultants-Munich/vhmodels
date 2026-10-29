@@ -20,7 +20,7 @@
     },
     "apptainer": {
       "platform": "linux-x86_64",
-      "python": "3.9",
+      "python": "3.11",
       "requirements": "requirements.linux-x86_64.txt",
       "exclude": "requirements-exclude.linux-x86_64.txt",
       "torch_backend": "cu118"

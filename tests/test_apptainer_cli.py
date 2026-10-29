@@ -158,7 +158,7 @@ def test_create_apptainer_image_renders_and_builds_definition(
         (
             "hyformer",
             "Hyformer",
-            "3.9",
+            "3.11",
             "cu118",
             "requirements-exclude.linux-x86_64.txt",
         ),
@@ -310,7 +310,7 @@ def test_create_apptainer_image_uses_lima_and_amd64_on_macos(
     assert captured["command"][15] == str(output_path.resolve())
     assert captured["kwargs"]["cwd"].parent == output_path.parent
     assert "models/Hyformer/requirements.linux-x86_64.txt" in captured["definition"]
-    assert '"cpython-3.9-linux-x86_64-gnu"' in captured["definition"]
+    assert '"cpython-3.11-linux-x86_64-gnu"' in captured["definition"]
     assert "--torch-backend cu118" in captured["definition"]
 
 
