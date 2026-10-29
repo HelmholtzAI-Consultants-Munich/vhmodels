@@ -1,0 +1,16 @@
+# Hyformer and ProtTrans as Ray Serve apps; deploy with `serve deploy` (see docs/ray.md).
+applications:
+  - name: hyformer
+    route_prefix: /hyformer
+    import_path: vhmodels.vh_ray.serve.deployment:build_app
+    args:
+      project: hyformer
+      model: hyformer_molecules_8M
+      device: cuda:0
+  - name: prottrans
+    route_prefix: /prottrans
+    import_path: vhmodels.vh_ray.serve.deployment:build_app
+    args:
+      project: prottrans
+      model: prot_bert
+      device: cuda:0
