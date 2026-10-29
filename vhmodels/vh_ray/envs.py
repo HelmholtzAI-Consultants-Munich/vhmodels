@@ -45,7 +45,7 @@ def build_commands(spec, target, versions, model_dir_name=None, repo_root=None):
         install += ["--excludes", str(spec.exclude_path)]
     if spec.requirements_path:
         install += ["--requirements", str(spec.requirements_path)]
-    install.append(f"ray=={versions['ray']}")
+    install.append(f"ray[serve]=={versions['ray']}")
 
     smoke_import = "import ray, vhmodels.vh_ray.actor"
     if model_dir_name:

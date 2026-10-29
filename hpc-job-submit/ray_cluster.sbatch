@@ -73,11 +73,14 @@ export RAY_AUTH_MODE=token
 RAY_PORT=$((20000 + (SLURM_JOB_ID % 1000) * 10))
 WORKER_PORT=$((30000 + (SLURM_JOB_ID % 500) * 40))
 DASHBOARD_PORT=$((8000 + SLURM_JOB_ID % 1000))
+SERVE_PORT=$((61000 + SLURM_JOB_ID % 1000))
 HEAD_NODE="$(hostname)"
 echo "Ray cluster on ${HEAD_NODE} with ${SLURM_GPUS_ON_NODE} GPU(s); submit jobs with:"
 echo "  RAY_AUTH_MODE=token RAY_ADDRESS=http://${HEAD_NODE}:${DASHBOARD_PORT} ray job submit -- python <script>"
+echo "Ray Serve: RAY_DASHBOARD_ADDRESS=http://${HEAD_NODE}:${DASHBOARD_PORT} serve deploy <config.yaml>"
+echo "  HTTP: http://${HEAD_NODE}:${SERVE_PORT}"
 
-ray start --head --block \
+ray start --head \
     --port="${RAY_PORT}" \
     --ray-client-server-port=$((RAY_PORT + 1)) \
     --dashboard-port="${DASHBOARD_PORT}" \
@@ -89,3 +92,9 @@ ray start --head --block \
     --num-gpus="${SLURM_GPUS_ON_NODE}" \
     --dashboard-host=0.0.0.0 \
     --disable-usage-stats
+
+# Serve keeps these HTTP options for every app deployed later with `serve deploy`.
+serve start --address="${HEAD_NODE}:${RAY_PORT}" \
+    --http-host=0.0.0.0 --http-port="${SERVE_PORT}"
+# Keep the cluster up until `scancel` or the time limit.
+sleep infinity

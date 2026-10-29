@@ -60,7 +60,7 @@ def test_build_commands_mirror_the_image_build(tmp_path):
         "--torch-backend", "cu118",
         "--excludes", str(spec.exclude_path),
         "--requirements", str(spec.requirements_path),
-        "ray==2.59.0",
+        "ray[serve]==2.59.0",
     ]  # fmt: skip
     assert commands[2][-1] == "/repo"
     assert commands[3][-1].endswith("vhmodels.models.Hyformer.model")
@@ -69,7 +69,7 @@ def test_build_commands_mirror_the_image_build(tmp_path):
 def test_build_commands_without_spec_install_only_ray(tmp_path):
     commands = envs.build_commands(UvSpec(), tmp_path, _VERSIONS)
 
-    assert commands[1][-2:] == ["--compile-bytecode", "ray==2.59.0"]
+    assert commands[1][-2:] == ["--compile-bytecode", "ray[serve]==2.59.0"]
     assert commands[3][-1] == "import ray, vhmodels.vh_ray.actor"
 
 
@@ -89,7 +89,7 @@ def test_build_model_venv_reuses_and_rebuilds(monkeypatch, tmp_path):
     monkeypatch.setattr(envs, "driver_versions", lambda: {**_VERSIONS, "ray": "2.60.0"})
     envs.build_model_venv("prottrans", manifest, run=fake_uv)
     assert len(fake_uv.commands) == 8
-    assert "ray==2.60.0" in fake_uv.commands[5]
+    assert "ray[serve]==2.60.0" in fake_uv.commands[5]
 
 
 def test_build_model_venv_refuses_to_replace_foreign_directory(tmp_path):
@@ -280,3 +280,40 @@ def test_model_actor_serves_the_model_like_a_worker(monkeypatch, tmp_path):
     # PersistentFake has no predict(); the model's own error surfaces.
     with pytest.raises(AttributeError, match="predict"):
         actor.predict("anything")
+
+
+def test_serve_build_app_runs_the_replica_in_the_model_venv(monkeypatch):
+    pytest.importorskip("ray.serve")
+    from vhmodels.vh_ray.serve import deployment
+
+    bound = []
+
+    class FakeDeployment:
+        def options(self, **options):
+            bound.append(options)
+            return self
+
+        def bind(self, *args):
+            bound.append(args)
+            return "app"
+
+    resources = {"weights": {"type": "huggingface", "repo_id": "r", "files": {}}}
+    monkeypatch.setattr(deployment, "ModelDeployment", FakeDeployment())
+    monkeypatch.setattr(
+        deployment, "resolve_ray_model", lambda project, model: (model, resources, None)
+    )
+
+    app = deployment.build_app(
+        {"project": "hyformer", "model": "hyformer_molecules_8M", "device": "cuda:0"}
+    )
+
+    assert app == "app"
+    assert bound == [
+        {
+            "ray_actor_options": {
+                "runtime_env": envs.model_runtime_env("hyformer"),
+                "num_gpus": 1,
+            }
+        },
+        ("hyformer", "hyformer_molecules_8M", resources, {"device": "cuda:0"}),
+    ]

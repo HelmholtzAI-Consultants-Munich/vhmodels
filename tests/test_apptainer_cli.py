@@ -169,7 +169,7 @@ def test_create_apptainer_image_uses_model_uv_dependencies(
     assert result.exit_code == 0
     assert f"models/{model_dir}/requirements.linux-x86_64.txt" in captured["definition"]
     assert '"cpython-3.11.15-linux-x86_64-gnu"' in captured["definition"]
-    assert "requirements.linux-x86_64.txt ray==2.59.0" in captured["definition"]
+    assert 'requirements.linux-x86_64.txt "ray[serve]==2.59.0"' in captured["definition"]
     if torch_backend is None:
         assert "--torch-backend" not in captured["definition"]
     else:

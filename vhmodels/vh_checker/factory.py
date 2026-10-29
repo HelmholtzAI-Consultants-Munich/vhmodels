@@ -37,6 +37,21 @@ def _resolve_resources(project, model):
     return _get_registry().resolve_resources(project, model)
 
 
+def resolve_ray_model(project, model=None, image_path=None):
+    """Check a Ray model's image or venv; return its variant, resources and image."""
+    from vhmodels.vh_ray.envs import check_model_venv, image_dir_path
+
+    image_path = image_path or image_dir_path(project)
+    if image_path is None:
+        check_model_venv(project, _get_registry().get_model(project))
+    else:
+        image_path = Path(image_path).expanduser().resolve()
+        if not image_path.is_file():
+            raise RuntimeError(f"Apptainer image '{image_path}' does not exist.")
+    variant, resources = _resolve_resources(project, model)
+    return variant, resources, image_path
+
+
 def _extract_frame(stdout, stderr):
     """Extract and decode one RESULT_MARKER-framed JSON value."""
 
@@ -204,16 +219,8 @@ def load_model(
     if runtime == "ray":
         # Ray is an optional extra, so it is only imported for this runtime.
         from vhmodels.vh_ray.client import RayModel
-        from vhmodels.vh_ray.envs import check_model_venv, image_dir_path
 
-        image_path = image_path or image_dir_path(project)
-        if image_path is None:
-            check_model_venv(project, manifest)
-        else:
-            image_path = Path(image_path).expanduser().resolve()
-            if not image_path.is_file():
-                raise RuntimeError(f"Apptainer image '{image_path}' does not exist.")
-        variant, resources = _resolve_resources(project, model)
+        variant, resources, image_path = resolve_ray_model(project, model, image_path)
         return RayModel(
             project=project,
             model=variant,

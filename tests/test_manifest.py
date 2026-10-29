@@ -56,7 +56,7 @@ def test_model_python_and_ray_match_the_repository():
     python_version = (root / ".python-version").read_text(encoding="utf-8")
     assert python_version.strip() == MODEL_PYTHON
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
-    assert f'ray = ["ray[default]=={RAY_VERSION}"]' in pyproject
+    assert f'ray = ["ray[default,serve]=={RAY_VERSION}"]' in pyproject
 
 
 # --- dependency boundaries: what model environments may import --------------

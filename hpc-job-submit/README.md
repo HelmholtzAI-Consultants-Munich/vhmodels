@@ -63,7 +63,7 @@ sbatch "${HPC_SCRIPTS}/run_inference_gpu.sbatch" "${CONFIG}"
 | Script | Node | Does |
 | --- | --- | --- |
 | `build_ray_env.sbatch` | CPU | Builds the configured model's uv venv under `VENV_DIR`; needs `uv` in `PATH` |
-| `ray_cluster.sbatch` | 2 GPUs of a supported type (no B300) on a shared GPU node, 30 min | Starts a single-node Ray cluster and keeps it up until `scancel` or the time limit |
+| `ray_cluster.sbatch` | 2 GPUs of a supported type (no B300) on a shared GPU node, 30 min | Starts a single-node Ray cluster with Ray Serve and keeps it up until `scancel` or the time limit |
 
 - Set `VHMODELS_PYTHON` to the Python 3.11 driver env with `vhmodels[cli,ray]`.
 - `ray_cluster.sbatch` uses `IMAGE_DIR`, `HF_CACHE_DIR`, `TORCH_CACHE_DIR`, `DATA_DIR`, `OUTPUT_DIR` and `VENV_DIR`; `MODEL` and `INFERENCE_SCRIPT` are chosen per job.
