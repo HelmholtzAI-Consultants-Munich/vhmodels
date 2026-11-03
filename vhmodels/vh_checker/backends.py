@@ -1,8 +1,4 @@
-"""Runtime strategies for launching isolated model workers.
-
-``ModelProxy`` delegates command construction, availability checks, runtime
-preparation, and subprocess environment handling to these backends.
-"""
+"""Conda and Apptainer backends: worker commands, checks and environment."""
 
 from abc import ABC, abstractmethod
 
@@ -58,11 +54,7 @@ class CondaBackend(RuntimeBackend):
         return shutil.which("conda") is not None
 
     def subprocess_env(self):
-        # vhmodels is installed into the env by `vh-checker create-env`, so no
-        # PYTHONPATH is needed for the runner or model discovery. Strip any
-        # inherited PYTHONPATH so a host entry cannot shadow the env's packages.
-        # Everything else (PATH, CUDA_VISIBLE_DEVICES, HF_HOME, ...) is passed
-        # through.
+        # Host PYTHONPATH could shadow the env's packages.
         env = os.environ.copy()
         env.pop("PYTHONPATH", None)
         return env
@@ -72,8 +64,7 @@ class ApptainerBackend(RuntimeBackend):
     def __init__(self, image_path, use_lima=None):
         self.image_path = os.fspath(image_path)
         self.use_lima = lima_utils.uses_lima() if use_lima is None else use_lima
-        # Lifecycle/relay commands do not need the caller's changing cwd. Use a
-        # stable, Lima-shared location so cleanup still works after ``chdir``.
+        # Stable Lima-shared cwd, so cleanup works after the caller's chdir.
         self._command_workdir = Path.home().resolve() if self.use_lima else None
 
     def _wrap_command(self, command):
@@ -146,19 +137,12 @@ class ApptainerBackend(RuntimeBackend):
             )
 
     def subprocess_env(self):
-        # The image contains its own vhmodels source and Python environment.
-        # An inherited host PYTHONPATH could make the container import a
-        # different checkout, while other useful settings (HF_HOME,
-        # CUDA_VISIBLE_DEVICES, APPTAINER_BINDPATH, ...) should pass through.
+        # Host PYTHONPATH could make the container import a different checkout.
         env = os.environ.copy()
         env.pop("PYTHONPATH", None)
         env.pop("APPTAINERENV_PYTHONPATH", None)
-        # Apptainer still accepts Singularity's legacy environment prefix.
-        env.pop("SINGULARITYENV_PYTHONPATH", None)
         if self.use_lima:
-            # Lima mounts the macOS home, but it is not the Linux guest's
-            # $HOME. Bind it explicitly so absolute host input paths remain
-            # visible inside the final Apptainer container.
+            # Bind the macOS home so absolute input paths are visible.
             host_home = str(Path.home().resolve())
             bind_path = env.get("APPTAINER_BINDPATH")
             env["APPTAINER_BINDPATH"] = (

@@ -88,14 +88,6 @@ model = vhmodels.load_model(
 
 See [docs/ray.md](docs/ray.md) for details, Slurm usage and the roadmap.
 
-### Example scripts
-
-The repository-level [`test.py`](test.py) runs the Nicheformer example, matching
-the default `MODEL` in `hpc-job-submit/config.json`. The example inference
-scripts for the other models are under [`examples/`](examples/). All of them can
-be used as `INFERENCE_SCRIPT` in the
-[HPC job submission guide](hpc-job-submit/README.md).
-
 ### Model lifetime
 
 Both Conda- and Apptainer-backed models start one worker lazily on their first
@@ -119,102 +111,42 @@ with vhmodels.load_model(
     second = model.embed(input="second.bmp")  # reuses the loaded model
 ```
 
-## Quick start
+Each runtime reaches the model through these classes:
 
-First create the corresponding Conda environment or Apptainer image. The
-examples below use the default Conda runtime; pass `runtime="apptainer"` to use
-an image.
+| Role | Conda / Apptainer | Ray |
+| --- | --- | --- |
+| Model implementation | `BaseModel` subclass, `vhmodels/models/<Model>/model.py` | same |
+| Handle returned by `load_model()` | `ModelProxy`, `vhmodels/vh_checker/factory.py` | `RayModelProxy`, `vhmodels/vh_ray/client.py` |
+| Starts, reuses and stops the model process | `ModelProcessManager`, `vhmodels/vh_checker/process_manager.py` | Ray cluster (`ray.init`, `ray.kill`) |
+| Isolated environment | `CondaBackend` / `ApptainerBackend`, `vhmodels/vh_checker/backends.py` | `runtime_env` with the venv or image Python, `vhmodels/vh_ray/envs.py` |
+| Request channel | Unix socket, `vhmodels/vh_checker/transports.py` + `protocol.py` | Ray actor calls (`.remote()`) |
+| Process that holds the model | `ModelWorker`, `vhmodels/vh_checker/worker.py` | `ModelActor`, `vhmodels/vh_ray/actor.py` |
+| HTTP serving | — | `ModelDeployment` (Ray Serve), `vhmodels/vh_ray/serve/deployment.py` |
 
-### DinoBloom
+## Examples
 
-```python
-import vhmodels
+Each script under [`examples/`](examples/) loads one model on its example input
+from [`example_data/`](example_data/). Create the model's Conda environment or
+Apptainer image first. Every script also works as `INFERENCE_SCRIPT` in the
+[HPC job submission guide](hpc-job-submit/README.md).
 
-model = vhmodels.load_model(project='dinobloom', model='s')
-results = model.embed(input='example_data/DinoBloom/001.bmp')
-print(results)
-```
+| Model | Script |
+| --- | --- |
+| DinoBloom | [`examples/dinobloom.py`](examples/dinobloom.py) |
+| H-Optimus-0 | [`examples/hoptimus0.py`](examples/hoptimus0.py) |
+| Hyformer | [`examples/hyformer.py`](examples/hyformer.py) |
+| MolE | [`examples/mole.py`](examples/mole.py) |
+| Nicheformer | [`test.py`](test.py) |
+| ProtTrans | [`examples/prottrans.py`](examples/prottrans.py) |
+| Two models on Ray | [`examples/ray/two_models.py`](examples/ray/two_models.py) |
 
-### H-Optimus-0
-
-H-Optimus-0 is a gated Hugging Face model. Accept its access conditions on the
-[model page](https://huggingface.co/bioptimus/H-optimus-0), then authenticate
-with `hf auth login` or set `HF_TOKEN` before the model worker starts.
-
-```python
-import vhmodels
-
-with vhmodels.load_model(project="hoptimus0") as model:
-    results = model.embed(input="example_data/H-Optimus-0/TUM-AACHEHDV.tif")
-print(results)  # one 1,536-dimensional embedding for this tile
-```
-
-Inputs must be 224 x 224 H&E tiles extracted at 0.5 microns per pixel. The
-integration accepts one tile, a list of tiles, or a directory of tiles; it does
-not tile or aggregate whole-slide images. The example TIFF's dimensions and
-RGB decoding are checked by the worker, but its physical scale is not encoded
-in a way this integration can verify.
-
-### Hyformer
-
-```python
-import vhmodels
-
-model = vhmodels.load_model(project='hyformer', model='hyformer_molecules_50M')
-results = model.embed(input=[
-        "CCCOc1cccc(-c2nn(-c3ccccc3)cc2/C=C(/C#N)C2=[N+]c3ccccc3[N-]2)c1 O=C(c1ccccc1)c1cc([N+](=O)O)c(Sc2c([N+](=O)O)cc([N+](=O)O)cc2[N+](=O)O)cc1[N+](=O)O",
-        "Nc1ncc(CN2CCC3(CC2)C[C@H](c2ccccc2)CN(C2CC2)C3)cn1 O=C(c1ccco1)N(Cc1ccccc1Cl)C[C@@H]1CC(c2ccc(Cl)o2)=NO1",
-        "O=C(c1cccc(/N=C(\O)CCc2ccccc2)c1)[N+]1CCCCC1"
-    ])
-print(results)
-```
-
-### ProtTrans
-
-```python
-import vhmodels
-
-model = vhmodels.load_model(project='prottrans', model='prot_t5_xl_uniref50')
-
-results = model.embed(input=[
-        "PRTEINO", "SEQWENCE"
-    ])
-print(results)
-```
-
-### MolE
-
-```python
-import vhmodels
-
-model = vhmodels.load_model(project='mole')
-input_path = 'example_data/MolE/examples_molecules.tsv'
-results = model.predict(input=input_path)
-print(results)
-```
-
-`predict()` creates the embeddings from the two-column input table by default.
-To reuse a precomputed embedding, call `model.embed(input_path)` and pass its
-result to `model.predict(input_path, embedding)`. The embedding maps chemical
-names to vectors, and `predict()` verifies that its names and order match the
-input table.
-
-### Nicheformer
-
-```python
-import vhmodels
-
-model = vhmodels.load_model(project='nicheformer')
-# Keep this example run small; omit max_cells to embed the full dataset.
-results = model.embed(input={
-    'technology_mean': 'example_data/Nicheformer/xenium_mean_script.npy',
-    'data': (
-        'example_data/Nicheformer/preprocessed/'
-        'Xenium_Preview_Human_Non_diseased_Lung_With_Add_on_FFPE_outs_sample-1000.h5ad'
-    ),
-}, batch_size=4, max_cells=4)
-print(results)
-```
+- **H-Optimus-0** is gated: accept the conditions on its
+  [model page](https://huggingface.co/bioptimus/H-optimus-0), then run
+  `hf auth login` or set `HF_TOKEN`. Inputs are 224 x 224 H&E tiles at 0.5 µm
+  per pixel (one tile, a list or a directory); whole slides are not tiled.
+- **MolE** `predict()` embeds the input table itself. To reuse an embedding,
+  pass `model.embed(input)` as `predict(input, embedding)`; names and order
+  must match the table.
 
 ## Adding models
 If you want to add your own model to `vhmodels`, please follow our [contribution guideline](docs/model_contribution.md).
@@ -235,27 +167,27 @@ For more details:
 
 ```text
 vhmodels
-├───.claude-plugin # Plugin/marketplace metadata for the AI skills
-├───docs # Manifest reference and model contribution guide
-├───example_data # Example inputs per model
-├───examples # Example inference scripts (local or HPC); ray/ for the Ray runtime
-├───hpc-job-submit # Slurm scripts + config template for Apptainer and Ray on HPC
-├───skills # AI agent skills (model-search, model-embed)
-├───tests # Unit and integration tests
+├───.claude-plugin              # AI skills plugin metadata
+├───docs                        # Manifest, contribution and Ray docs
+├───example_data                # Example inputs per model
+├───examples                    # Inference scripts; ray/ for the Ray runtime
+├───hpc-job-submit              # Slurm scripts and config template
+├───skills                      # AI agent skills
+├───tests                       # Unit and integration tests
 └───vhmodels
-    ├───envs # Template for Apptainer environments
-    ├───models # Implementations + Conda/uv dependencies + manifests
-    │   ├───DinoBloom # model.json, manifests/<variant>.json, model.py, ...
+    ├───envs                    # Apptainer definition template
+    ├───models                  # One folder per model + manifest registry
+    │   ├───DinoBloom           # model.json, manifests/, model.py, deps
     │   ├───HOptimus0
     │   ├───Hyformer
     │   ├───MolE
     │   ├───Nicheformer
     │   ├───ProtTrans
-    │   ├───registry.py # Registry: discovers + resolves manifests
-    │   ├───schema.py # Pydantic manifest schema
-    │   ├───source_resolver.py # turns manifest sources into local paths
-    │   └───discovery.py # dependency-free class_path lookup for workers
-    ├───utils # Utility functions
-    ├───vh_checker # CLI + base model interface
-    └───vh_ray # Ray runtime: model venvs, actor, client
+    │   ├───registry.py         # Discovers and resolves manifests
+    │   ├───schema.py           # Pydantic manifest schema
+    │   ├───source_resolver.py  # Manifest sources to local paths
+    │   └───discovery.py        # Dependency-free class lookup
+    ├───utils                   # Shared helpers
+    ├───vh_checker              # CLI, base model, Conda/Apptainer runtimes
+    └───vh_ray                  # Ray runtime
 ```

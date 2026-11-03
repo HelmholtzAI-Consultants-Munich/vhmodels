@@ -13,7 +13,6 @@ cluster must provide `sbatch`, `jq`, and `/usr/bin/apptainer`.
 Every job takes the absolute path of a JSON config with the keys below.
 [`config.json`](config.json) is a template: copy it anywhere, for example one
 config per model, and fill in absolute paths available on the compute nodes.
-`config.local.json` in this folder is ignored by Git for convenience.
 
 | Setting | Purpose |
 | --- | --- |

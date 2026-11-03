@@ -1,4 +1,4 @@
-"""Host-side model proxy and subprocess handover protocol."""
+"""Host-side ``load_model()`` and the ``ModelProxy`` for Conda and Apptainer."""
 
 import json
 from pathlib import Path
@@ -13,13 +13,7 @@ from vhmodels.utils.subprocess_utils import run_subprocess as _run_subprocess
 
 DEFAULT_TIMEOUT = 600
 
-# vhmodels/__init__.py imports this module to expose load_model(), and that
-# import runs inside every isolated model worker (including dependency-free
-# test fixtures with no third-party packages at all -- see
-# tests/fixtures/persistent_worker). vhmodels.models.registry needs Pydantic,
-# so it must only be imported lazily, once load_model() actually runs on the
-# host. Tests override the cache directly, e.g.
-# monkeypatch.setattr(factory, "_registry", Registry(models_dir=...)).
+# Created lazily: the Registry needs Pydantic, which model workers may lack.
 _registry = None
 
 
@@ -52,7 +46,7 @@ def _extract_frame(stdout, stderr):
         _fail("No result marker found in subprocess output (no opening marker).")
 
     start = open_idx + len(RESULT_MARKER)
-    # Use the final marker so model data may itself contain the marker string.
+    # Last marker, as model data may contain the marker string.
     close_idx = stdout.rfind(RESULT_MARKER)
     if close_idx < start:
         _fail("Result truncated: opening marker present but closing marker missing.")
@@ -191,9 +185,7 @@ def load_model(
     conda_runtime = manifest.runtimes.conda
     env_name = conda_runtime.env_name if conda_runtime else f"vhmodels-{project}"
     if runtime == "apptainer":
-        # Match the default output of ``create-apptainer-image``. Resolve the
-        # path now so changing the working directory between load and embed
-        # cannot silently select a different image.
+        # Resolve now so a later chdir cannot select another image.
         image_path = image_path or f"{env_name}.sif"
         env_name = str(Path(image_path).expanduser().resolve())
     elif image_path is not None and runtime != "ray":
@@ -203,7 +195,7 @@ def load_model(
 
     if runtime == "ray":
         # Ray is an optional extra, so it is only imported for this runtime.
-        from vhmodels.vh_ray.client import RayModel
+        from vhmodels.vh_ray.client import RayModelProxy
         from vhmodels.vh_ray.envs import check_model_venv, image_dir_path
 
         image_path = image_path or image_dir_path(project)
@@ -214,7 +206,7 @@ def load_model(
             if not image_path.is_file():
                 raise RuntimeError(f"Apptainer image '{image_path}' does not exist.")
         variant, resources = _resolve_resources(project, model)
-        return RayModel(
+        return RayModelProxy(
             project=project,
             model=variant,
             resources=resources,

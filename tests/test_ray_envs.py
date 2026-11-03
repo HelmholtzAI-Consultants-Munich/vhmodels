@@ -139,7 +139,7 @@ def test_load_model_checks_venv_and_resolves_on_the_host(monkeypatch):
     created, checked = [], []
     resources = {"weights": {"type": "huggingface", "repo_id": "r", "files": {}}}
     monkeypatch.setattr(
-        client, "RayModel", lambda **kwargs: created.append(kwargs) or "ray-model"
+        client, "RayModelProxy", lambda **kwargs: created.append(kwargs) or "ray-model"
     )
     monkeypatch.setattr(
         envs, "check_model_venv", lambda project, manifest: checked.append(project)
@@ -211,7 +211,7 @@ def test_actor_options_run_the_actor_in_an_image(device, nv):
 def test_load_model_with_image_skips_the_venv(monkeypatch, tmp_path):
     created = []
     image = tmp_path / "mole.sif"
-    monkeypatch.setattr(client, "RayModel", lambda **kwargs: created.append(kwargs))
+    monkeypatch.setattr(client, "RayModelProxy", lambda **kwargs: created.append(kwargs))
     monkeypatch.setattr(envs, "check_model_venv", pytest.fail)
     monkeypatch.setattr(factory, "_resolve_resources", lambda project, model: (model, {}))
 

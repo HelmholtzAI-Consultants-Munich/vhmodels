@@ -85,8 +85,7 @@ class ModelProcessManager:
     def _new_identity(self):
         unique_suffix = f"{self._creator_pid}-{uuid.uuid4().hex[:12]}"
         self.worker_name = f"vhmodels-{self._project_name}-{unique_suffix}"
-        # Keep the Apptainer-specific public name for compatibility with
-        # lifecycle tooling and existing callers that inspect their instance.
+        # Apptainer instance name
         self.instance_name = self.worker_name
         self.socket_path = f"/tmp/{self.worker_name}.sock"
 
@@ -142,8 +141,7 @@ class ModelProcessManager:
             variant, resources = self.resolve_resources()
         self.transport.prepare()
         _log("BACKEND", f"{self.runtime_name} runtime ready")
-        # A launcher may create its worker before reporting an error, so mark
-        # ownership before starting and make the exact identity safe to stop.
+        # The launcher may create the worker before failing, so own it first.
         self._worker_may_exist = True
         self._register_atexit()
         try:
@@ -197,8 +195,7 @@ class ModelProcessManager:
             try:
                 return self._request_locked(message)
             except ModelWorkerError:
-                # A rejected request does not invalidate an otherwise healthy
-                # loaded model, so allow a later request to reuse the worker.
+                # Model errors leave the worker reusable.
                 raise
             except BaseException:
                 self._started = False
@@ -277,8 +274,7 @@ class ApptainerProcessManager(ModelProcessManager):
         extract_frame,
         resolve_resources=None,
     ):
-        # Resolve through attributes so existing test/application injection can
-        # replace the subprocess helpers after construction.
+        # Looked up per call, so tests can replace them after construction.
         self._run_subprocess = run_subprocess
         self._extract_frame = extract_frame
         transport = ApptainerWorkerTransport(

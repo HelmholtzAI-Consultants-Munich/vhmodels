@@ -6,7 +6,7 @@
 driver (Python 3.11.15, vhmodels[ray]: ray[default]==2.59.0)
   vhmodels.load_model(project, model, runtime="ray", device=...)
     ├─ Registry.resolve_resources()   manifest + downloads, on the driver
-    └─ RayModel                       vhmodels/vh_ray/client.py
+    └─ RayModelProxy                  vhmodels/vh_ray/client.py
          ray.remote(ModelActor).options(runtime_env={"py_executable": <image or venv python>})
            └─ ModelActor              vhmodels/vh_ray/actor.py
                 └─ model.load_model(variant, resources) / embed / predict
@@ -96,9 +96,9 @@ with vhmodels.load_model(
 - **Ray connection.** `load_model` connects to the cluster in `RAY_ADDRESS`, otherwise it starts a local one. Call `ray.init(...)` yourself first to control this.
 - **GPUs.** A `device` starting with `cuda` requests one GPU for the actor. Ray then sets the actor's `CUDA_VISIBLE_DEVICES`, so `cuda:0` is the assigned GPU.
 - **Actor options.** `ray_options={...}` is passed to `.options()`, for example `{"num_gpus": 0.5}`.
-- **Parallel calls.** `RayModel.actor` is the actor handle. Calls such as `model.actor.embed.remote(...)` return futures; [examples/ray/two_models.py](../examples/ray/two_models.py) uses them to run two models with conflicting dependencies concurrently.
+- **Parallel calls.** `RayModelProxy.actor` is the actor handle. Calls such as `model.actor.embed.remote(...)` return futures; [examples/ray/two_models.py](../examples/ray/two_models.py) uses them to run two models with conflicting dependencies concurrently.
 - **Same API as the other runtimes.** The scripts in [examples/](../examples/) run unchanged with `VHMODELS_RUNTIME=ray`.
-- **Load time.** The actor starts loading when `load_model` returns; the first call waits for it. Calls have no timeout by default; `RayModel(..., timeout=...)` sets one.
+- **Load time.** The actor starts loading when `load_model` returns; the first call waits for it. Calls have no timeout by default; `RayModelProxy(..., timeout=...)` sets one.
 - **Input paths.** Relative input paths work because each request carries the caller's working directory (needs a shared filesystem).
 
 ### Start-up cost on network filesystems
@@ -112,7 +112,7 @@ On the HPC Lustre, importing Hyformer's tokenizer stack (`deepchem`) takes about
 ### Driver paths on worker `sys.path`
 
 - Ray prepends the driver's script directory and working directory (a job's `working_dir`) to every worker's `sys.path`, so a script named like a model dependency shadows it. Example: `examples/hyformer.py` shadowed the `hyformer` package and deadlocked the actor.
-- `RayModel` passes these directories to `ModelActor`, which removes them from `sys.path` before loading the model.
+- `RayModelProxy` passes these directories to `ModelActor`, which removes them from `sys.path` before loading the model.
 
 ### Authentication
 

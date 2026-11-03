@@ -6,7 +6,7 @@ Thank you for taking the time to add your model to `vhmodels`! The process consi
 2. add a description of your model
 3. create a new model entry in `vhmodels`
 4. add example data
-5. add your model to the quick start instructions
+5. add an example script
 
 ## Step 1: Hugging Face upload
 
@@ -224,18 +224,9 @@ class YourModel(BaseModel):
 If needed, add a small example data file to `example_data/<your_model>` that can
 be used in the inference examples.
 
-## Step 5: add quick start instructions
+## Step 5: add an example script
 
-In the README, add your model to the quick start instructions (add all required arguments for the model loading):
-
-```python
-import vhmodels
-
-model = vhmodels.load_model(project='<your_model>')
-results = model.embed(input='example_data/<your_model>/example.data')
-print(results)
-```
-
-Also add an inference script `examples/<your_model>.py`, following the existing
+Add an inference script `examples/<your_model>.py`, following the existing
 scripts, so the model can be run locally and through the
-[HPC job submission](../hpc-job-submit/README.md) workflow.
+[HPC job submission](../hpc-job-submit/README.md) workflow. List it in the
+README's examples table.

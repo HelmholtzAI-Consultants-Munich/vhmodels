@@ -27,7 +27,7 @@ def _actor_options(project, load_kwargs, ray_options=None, image_path=None):
     return {"runtime_env": runtime_env, **options}
 
 
-class RayModel:
+class RayModelProxy:
     """``ModelProxy``-compatible handle to a model running as a Ray actor."""
 
     def __init__(

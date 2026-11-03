@@ -102,12 +102,10 @@ def test_apptainer_runtime_lookup_depends_on_launcher(monkeypatch):
 def test_apptainer_lima_env_binds_host_home(monkeypatch, tmp_path):
     monkeypatch.setattr(backends.Path, "home", lambda: tmp_path)
     monkeypatch.setenv("APPTAINER_BINDPATH", "/data")
-    monkeypatch.setenv("SINGULARITYENV_PYTHONPATH", "/host/source")
 
     env = ApptainerBackend("model.sif", use_lima=True).subprocess_env()
 
     assert env["APPTAINER_BINDPATH"] == f"/data,{tmp_path.resolve()}"
-    assert "SINGULARITYENV_PYTHONPATH" not in env
 
 
 def test_apptainer_lima_prepare_requires_shared_workdir(monkeypatch):

@@ -1,10 +1,8 @@
-# The file contains the interface, which each model will implement:
-# load_model, embed, predict, generate
-#
-# This module runs inside every isolated model worker, including
-# dependency-free test fixtures with no third-party packages installed, so it
-# only uses vhmodels.models.discovery (stdlib-only) to look up a model's
-# class_path -- never the Pydantic-validated Registry in vhmodels.models.registry.
+"""Interface every model implements: load_model, embed, predict, generate.
+
+Imported inside model workers, so it must stay free of third-party dependencies.
+"""
+
 from abc import ABC, abstractmethod
 import sys
 import os
@@ -17,16 +15,13 @@ class BaseModel(ABC):
     def get_class(_class):
         class_path = discovery.find_class_path(_class)
 
-        # Determine the absolute path to your 'models' directory
-        # Adjust '..' based on where runner.py sits relative to the models
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        models_dir = os.path.join(current_dir, "..", "models")  # Example path
+        models_dir = os.path.join(current_dir, "..", "models")
 
         if models_dir not in sys.path:
             sys.path.insert(0, models_dir)
 
         try:
-            # Now Python can see 'DinoBloom' inside the models folder
             module_path, class_name = class_path.rsplit(".", 1)
             module = importlib.import_module(module_path)
             return getattr(module, class_name)

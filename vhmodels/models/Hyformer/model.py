@@ -27,7 +27,7 @@ class Hyformer(BaseModel):
         self.device = None
         self.variant = None
 
-    def load_model(self, model, resources, seed=1337, **kwargs):
+    def load_model(self, model, resources, **kwargs):
         """
         Downloads and loads the artifacts for the specified model. The available models are:
         - hyformer_molecules_8M
@@ -50,8 +50,6 @@ class Hyformer(BaseModel):
 
         device : str
 
-        seed : int
-
         Returns
         -------
         None
@@ -67,20 +65,17 @@ class Hyformer(BaseModel):
 
         self.device = resolve_torch_device(torch, kwargs.get("device", "auto"))
 
-        self.tokenizer, self.model = self.model_specs[model](weights, seed)
+        self.tokenizer, self.model = self.model_specs[model](weights)
 
         self.model.to(self.device)
         self.model.eval()
 
     @staticmethod
-    def _load_v1(weights, seed):
+    def _load_v1(weights):
         from hyformer.models.auto import AutoModel
-        from hyformer.utils import set_seed
         from hyformer.utils.tokenizers.auto import AutoTokenizer
         from hyformer.configs.tokenizer import TokenizerConfig
         from hyformer.configs.model import ModelConfig
-
-        set_seed(seed)
 
         with open(weights["files"]["tokenizer_config"], "r") as f:
             tok_config_data = json.load(f)
@@ -98,13 +93,10 @@ class Hyformer(BaseModel):
         return tokenizer, model
 
     @staticmethod
-    def _load_v2(weights, seed):
+    def _load_v2(weights):
         from hyformer_v2.models.auto import AutoModel
-        from hyformer_v2.utils.reproducibility import set_seed
         from hyformer_v2.tokenizers.auto import AutoTokenizer
         from hyformer_v2.configs.tokenizer import TokenizerConfig
-
-        set_seed(seed)
 
         with open(weights["files"]["tokenizer_config"], "r") as f:
             tok_config_data = json.load(f)

@@ -108,7 +108,6 @@ def _determine_current_platform():
 @click.argument("project")
 def create_env(project):
     """Create a Conda environment for a specific model."""
-    # Check if Conda is installed
     if not _check_conda_installed():
         return
 
@@ -201,8 +200,7 @@ def create_apptainer_image(project, output):
         raise click.ClickException(
             "Apptainer images can only be built on Linux or on macOS with Lima."
         )
-    # macOS uses a native ARM Lima VM plus Rosetta to build the same AMD64
-    # Linux image that runs natively on the supported HPC platform.
+    # macOS builds the linux-x86_64 image in an ARM Lima VM with Rosetta.
     target_platform = "linux-x86_64" if use_lima else host_platform
 
     supported_platforms = manifest.supported_platforms
@@ -314,9 +312,7 @@ def create_apptainer_image(project, output):
             definition_path.write_text(definition, encoding="utf-8")
             build_command = ["apptainer", "build"]
             if use_lima:
-                # Lima mounts /tmp as a small RAM disk. Large model images can
-                # fill it while Apptainer assembles the uncompressed rootfs, so
-                # place build scratch data on the VM's persistent disk instead.
+                # Lima's /tmp is a small RAM disk; build on the VM's disk.
                 build_command = [
                     "env",
                     "APPTAINER_TMPDIR=/var/tmp",

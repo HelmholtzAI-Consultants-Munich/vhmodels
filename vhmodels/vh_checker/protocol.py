@@ -5,23 +5,10 @@ import socket
 import time
 
 
-# Shared constants for the parent<->child handover protocol.
-# Both the host transport and the isolated worker import these values so the
-# contract cannot drift.
-#
-# The initial load carries project/model/load kwargs, while each subsequent
-# embed or predict carries arbitrary JSON input, keyword arguments, and may
-# carry cwd (predict also carries the embedding to predict from). The worker
-# replies with {"ok": true, "result": ...} or {"ok": false, "error": ...}.
-#
-# Child -> parent response schema:
-# RESULT_MARKER + json.dumps(<model result dict>) + RESULT_MARKER + "\n"
-#
-# Everything else on stdout (progress bars, library logging, warnings) is
-# ignored by the parser, so the result channel is immune to that noise.
-
+# Frames the relay's JSON reply on stdout, so other output is ignored.
 RESULT_MARKER = "===VHMODELS_RESULT==="
 
+# Request types; the worker replies {"ok": bool, "result" | "error": ...}.
 MESSAGE_TYPE_KEY = "type"
 LOAD_MESSAGE_TYPE = "load"
 EMBED_MESSAGE_TYPE = "embed"

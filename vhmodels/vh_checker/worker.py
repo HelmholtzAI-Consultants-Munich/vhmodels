@@ -1,8 +1,6 @@
-"""Persistent model worker used by isolated runtime processes.
+"""Persistent worker that loads one model and serves it over a Unix socket.
 
-The server owns the model object and communicates over a Unix-domain socket.
-Apptainer launches the request CLI as a lightweight relay, while Conda connects
-to the same socket protocol directly from the host process.
+Conda connects to the socket directly; Apptainer goes through the ``request`` relay.
 """
 
 import argparse
@@ -85,8 +83,7 @@ class ModelWorker:
         model_class = BaseModel.get_class(project)
         model = model_class()
         model.load_model(message.get("model"), resources, **load_kwargs)
-        # Publish only a completely loaded model. A failed load leaves the
-        # worker unloaded so the process manager can tear the instance down.
+        # Publish only a fully loaded model.
         self._model = model
         return None
 
@@ -152,8 +149,7 @@ def serve(socket_path):
                 try:
                     connection.sendall(encoded_response)
                 except OSError:
-                    # The host may have timed out and killed its relay. The
-                    # process manager will stop this instance in that case.
+                    # The host timed out and will stop this worker.
                     pass
     finally:
         server.close()
@@ -182,8 +178,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     serve_parser = subparsers.add_parser("serve")
-    # ``instance start`` treats option-looking trailing arguments as its own
-    # flags, so the startscript receives the socket as a plain positional value.
+    # Positional, as ``instance start`` would parse an option as its own.
     serve_parser.add_argument("socket")
 
     request_parser = subparsers.add_parser("request")

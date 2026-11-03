@@ -5,6 +5,7 @@ from pathlib import Path
 
 import timm
 import torch
+from huggingface_hub.errors import GatedRepoError
 from PIL import Image
 from torchvision import transforms
 
@@ -55,12 +56,19 @@ class HOptimus0(BaseModel):
             model_name = f"{model_name}@{checkpoint['revision']}"
 
         self.device = resolve_torch_device(torch, kwargs.get("device", "auto"))
-        self.model = timm.create_model(
-            model_name,
-            pretrained=True,
-            init_values=1e-5,
-            dynamic_img_size=False,
-        )
+        try:
+            self.model = timm.create_model(
+                model_name,
+                pretrained=True,
+                init_values=1e-5,
+                dynamic_img_size=False,
+            )
+        except GatedRepoError as error:
+            raise RuntimeError(
+                f"No access to the gated model '{checkpoint['repo_id']}'. Accept its "
+                f"conditions on https://huggingface.co/{checkpoint['repo_id']}, then "
+                "run 'hf auth login' or set HF_TOKEN."
+            ) from error
         self.model.to(self.device)
         self.model.eval()
 
