@@ -102,9 +102,12 @@ class ProtTrans(BaseModel):
         self.tokenizer = tokenizer_cls.from_pretrained(
             tokenizer["repo_id"], do_lower_case=False, **self._revision(tokenizer)
         )
-        self.model = model_cls.from_pretrained(
-            weights["repo_id"], **self._revision(weights)
-        )
+        load_kwargs = self._revision(weights)
+        if model_cls is T5EncoderModel:
+            load_kwargs["key_mapping"] = {
+                r"^decoder\.embed_tokens\.weight$": "shared.weight"
+            }
+        self.model = model_cls.from_pretrained(weights["repo_id"], **load_kwargs)
 
         self.model = self.model.to(self.device)
 
