@@ -1,0 +1,74 @@
+# Single-pod Ray head of the inference service (no KubeRay operator).
+# The Jobs endpoint (8265) has no authentication and is only reached via
+# `kubectl port-forward`; the Service is ClusterIP.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vhmodels-ray-head
+  labels: &labels
+    app.kubernetes.io/name: vhmodels-ray-head
+    app.kubernetes.io/part-of: vhmodels-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vhmodels-ray-head
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ray-head
+          image: rayproject/ray:2.59.0-py311
+          command:
+            - ray
+            - start
+            - --head
+            - --dashboard-host=0.0.0.0
+            - --num-cpus=2
+            - --num-gpus=0
+            - --memory=2147483648
+            - --object-store-memory=1073741824
+            - --block
+          ports:
+            - {name: gcs, containerPort: 6379}
+            - {name: dashboard, containerPort: 8265}
+            - {name: client, containerPort: 10001}
+          readinessProbe:
+            httpGet: {path: /api/gcs_healthz, port: dashboard}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests: {cpu: "2", memory: 4Gi}
+            limits: {cpu: "2", memory: 4Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: dshm, mountPath: /dev/shm}
+      volumes:
+        - name: dshm
+          # Must exceed --object-store-memory; counts against the memory limit.
+          emptyDir: {medium: Memory, sizeLimit: 1536Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vhmodels-ray-head
+  labels:
+    app.kubernetes.io/part-of: vhmodels-inference
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: vhmodels-ray-head
+  ports:
+    - {name: gcs, port: 6379, targetPort: gcs}
+    - {name: dashboard, port: 8265, targetPort: dashboard}
+    - {name: client, port: 10001, targetPort: client}

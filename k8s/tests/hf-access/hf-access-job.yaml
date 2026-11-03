@@ -1,0 +1,96 @@
+# One-shot Job that checks the pod can reach Hugging Face over HTTPS and that
+# the hf-hopt0-token Secret grants access to the gated H-optimus-0 repo.
+# Standard library only, so no package install is needed in the pod.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vhmodels-hf-access
+  labels:
+    app.kubernetes.io/part-of: vhmodels-hf-access
+data:
+  check.py: |
+    import json
+    import os
+    import sys
+    import urllib.error
+    import urllib.request
+
+    REPO = "bioptimus/H-optimus-0"
+    HUB = "https://huggingface.co"
+    TOKEN = os.environ.get("HF_TOKEN", "")
+
+
+    def get(url, token=None):
+        req = urllib.request.Request(url, headers={"User-Agent": "vhmodels-hf-access"})
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read()
+
+
+    if not TOKEN:
+        sys.exit("FAIL: HF_TOKEN is not set in the pod")
+    print(f"HF_TOKEN present ({len(TOKEN)} chars)")
+
+    status, _ = get(f"{HUB}/{REPO}/resolve/main/config.json")
+    print(f"anonymous download of config.json: HTTP {status} (expected 401/403, repo is gated)")
+
+    status, body = get(f"{HUB}/api/models/{REPO}", TOKEN)
+    if status != 200:
+        sys.exit(f"FAIL: model info with token: HTTP {status}")
+    files = {s["rfilename"] for s in json.loads(body).get("siblings", [])}
+    print(f"model info with token: HTTP 200, files: {sorted(files)}")
+
+    status, body = get(f"{HUB}/{REPO}/resolve/main/config.json", TOKEN)
+    if status != 200:
+        sys.exit(f"FAIL: download of config.json with token: HTTP {status}")
+    print(f"download of config.json with token: HTTP 200, {len(body)} bytes")
+    print(json.dumps(json.loads(body), indent=2))
+    print("HF ACCESS OK")
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vhmodels-hf-access
+  labels:
+    app.kubernetes.io/part-of: vhmodels-hf-access
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: vhmodels-hf-access
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: check
+          image: python:3.11-slim
+          command: [python, -u, /app/check.py]
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: hf-hopt0-token, key: HF_TOKEN}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: app, mountPath: /app, readOnly: true}
+      volumes:
+        - name: app
+          configMap:
+            name: vhmodels-hf-access

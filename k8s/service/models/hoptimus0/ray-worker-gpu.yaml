@@ -1,0 +1,68 @@
+# GPU Ray worker that joins the service's head (k8s/service/ray-head.yaml) and
+# hosts the "hoptimus0-gpu" actor (deploy.py --gpu). It takes the
+# namespace's single GPU; the actor's num_gpus=1 places it here. Host memory
+# covers loading the 4.5GB checkpoint before the model moves to the GPU.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vhmodels-ray-worker-gpu
+  labels: &labels
+    app.kubernetes.io/name: vhmodels-ray-worker-gpu
+    app.kubernetes.io/part-of: vhmodels-inference
+spec:
+  replicas: 1
+  # The quota has one GPU, so the old pod must go before a new one can start.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vhmodels-ray-worker-gpu
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      # GPU nodes are commonly tainted so that only GPU pods land there.
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      containers:
+        - name: ray-worker
+          # Same Ray and Python as the head, built on CUDA 12.6 like vhmodels' torch.
+          image: rayproject/ray:2.59.0-py311-cu126
+          # 5.5Gi for the actor + 512Mi object store, ~2Gi left for the raylet.
+          command:
+            - ray
+            - start
+            - --address=vhmodels-ray-head:6379
+            - --num-cpus=2
+            - --num-gpus=1
+            - --memory=5905580032
+            - --object-store-memory=536870912
+            - --block
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: hf-hopt0-token, key: HF_TOKEN}
+            - name: HF_HOME
+              value: /cache/huggingface
+          resources:
+            requests: {cpu: "2", memory: 8Gi, nvidia.com/gpu: 1}
+            limits: {cpu: "2", memory: 8Gi, nvidia.com/gpu: 1}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: dshm, mountPath: /dev/shm}
+            - {name: cache, mountPath: /cache}
+      volumes:
+        - name: dshm
+          emptyDir: {medium: Memory, sizeLimit: 768Mi}
+        # Node disk, gone with the pod: the checkpoint is downloaded per pod.
+        - name: cache
+          emptyDir: {sizeLimit: 10Gi}

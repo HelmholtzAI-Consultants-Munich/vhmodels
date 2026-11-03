@@ -1,0 +1,61 @@
+# CPU-only Ray worker that joins the service's head (k8s/service/ray-head.yaml)
+# and hosts the H-Optimus-0 actor, which the custom "hoptimus0" resource pins
+# here. Sized for the 1.1B-parameter model in fp32 (~4.5GB weights).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vhmodels-ray-worker
+  labels: &labels
+    app.kubernetes.io/name: vhmodels-ray-worker
+    app.kubernetes.io/part-of: vhmodels-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vhmodels-ray-worker
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ray-worker
+          image: rayproject/ray:2.59.0-py311
+          # 5.5Gi for the actor + 512Mi object store, ~2Gi left for the raylet.
+          command:
+            - ray
+            - start
+            - --address=vhmodels-ray-head:6379
+            - --num-cpus=2
+            - --num-gpus=0
+            - --memory=5905580032
+            - --object-store-memory=536870912
+            - '--resources={"hoptimus0": 1}'
+            - --block
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: hf-hopt0-token, key: HF_TOKEN}
+            - name: HF_HOME
+              value: /cache/huggingface
+          resources:
+            requests: {cpu: "2", memory: 8Gi}
+            limits: {cpu: "2", memory: 8Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: dshm, mountPath: /dev/shm}
+            - {name: cache, mountPath: /cache}
+      volumes:
+        - name: dshm
+          emptyDir: {medium: Memory, sizeLimit: 768Mi}
+        # Node disk, gone with the pod: the checkpoint is downloaded per pod.
+        - name: cache
+          emptyDir: {sizeLimit: 10Gi}

@@ -1,0 +1,95 @@
+# Placeholder inference API on port 8000, standing in for the real service
+# that will get the public hostname. /health also checks that the Ray head is
+# reachable through cluster DNS.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vhmodels-api-smoke
+  labels:
+    app.kubernetes.io/part-of: vhmodels-smoke
+data:
+  server.py: |
+    import json
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    RAY_DASHBOARD = "http://vhmodels-ray-head:8265"
+
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path != "/health":
+                self.send_error(404)
+                return
+            try:
+                with urllib.request.urlopen(f"{RAY_DASHBOARD}/api/version", timeout=5) as r:
+                    ray = {"reachable": True, **json.load(r)}
+            except Exception as e:
+                ray = {"reachable": False, "error": str(e)}
+            body = json.dumps({"status": "ok", "ray_head": ray}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+
+    HTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vhmodels-api-smoke
+  labels: &labels
+    app.kubernetes.io/name: vhmodels-api-smoke
+    app.kubernetes.io/part-of: vhmodels-smoke
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vhmodels-api-smoke
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: rayproject/ray:2.59.0-py311
+          command: [python, -u, /app/server.py]
+          ports:
+            - {name: http, containerPort: 8000}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: app, mountPath: /app, readOnly: true}
+      volumes:
+        - name: app
+          configMap:
+            name: vhmodels-api-smoke
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vhmodels-api-smoke
+  labels:
+    app.kubernetes.io/part-of: vhmodels-smoke
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: vhmodels-api-smoke
+  ports:
+    - {name: http, port: 8000, targetPort: http}

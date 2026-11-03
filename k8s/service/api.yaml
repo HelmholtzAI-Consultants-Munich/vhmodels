@@ -1,0 +1,128 @@
+# Minimal inference API, forwarding to the model actors over Ray Client; this is
+# the service that later gets the public hostname.
+#   POST /embed or /embed/hoptimus0  body: a 224 x 224 tile  -> H-Optimus-0
+#   POST /embed/hoptimus0-gpu  body: a 224 x 224 tile  -> H-Optimus-0 on the GPU
+#   POST /embed/prottrans  body: {"sequences": [...]} as JSON -> ProtT5-XL-UniRef50
+# Requests are served in threads, so the models run concurrently; each actor
+# still handles one request at a time.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vhmodels-inference-api
+  labels:
+    app.kubernetes.io/part-of: vhmodels-inference
+data:
+  server.py: |
+    import json
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    import ray
+
+    ray.init("ray://vhmodels-ray-head:10001", namespace="vhmodels")
+
+    # Route -> actor name, request body decoder and the job that deploys the actor.
+    MODELS = {
+        "/embed": ("hoptimus0", bytes, "k8s/service/models/hoptimus0/deploy.py"),
+        "/embed/hoptimus0": ("hoptimus0", bytes, "k8s/service/models/hoptimus0/deploy.py"),
+        "/embed/hoptimus0-gpu": ("hoptimus0-gpu", bytes, "k8s/service/models/hoptimus0/deploy.py --gpu"),
+        "/embed/prottrans": (
+            "prottrans",
+            lambda body: json.loads(body)["sequences"],
+            "k8s/service/models/prottrans/deploy.py",
+        ),
+    }
+
+
+    class Handler(BaseHTTPRequestHandler):
+        def reply(self, status, payload):
+            body = json.dumps(payload).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if self.path != "/health":
+                return self.reply(404, {"error": "not found"})
+            self.reply(200, {"status": "ok", "ray_connected": ray.is_initialized()})
+
+        def do_POST(self):
+            if self.path not in MODELS:
+                return self.reply(404, {"error": "not found"})
+            name, decode, deploy = MODELS[self.path]
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            try:
+                actor = ray.get_actor(name)
+            except ValueError:
+                return self.reply(503, {"error": f"model {name} not deployed, run {deploy}"})
+            try:
+                result = ray.get(actor.embed.remote(decode(body)))
+            except Exception as e:
+                return self.reply(400, {"error": str(e)})
+            # H-Optimus-0 returns the bare embedding, ProtT5 a dict with one per protein.
+            if isinstance(result, list):
+                result = {"dim": len(result), "embedding": result}
+            self.reply(200, result)
+
+
+    ThreadingHTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vhmodels-inference-api
+  labels: &labels
+    app.kubernetes.io/name: vhmodels-inference-api
+    app.kubernetes.io/part-of: vhmodels-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vhmodels-inference-api
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          # Same image as the cluster, so the Ray Client and Python versions match.
+          image: rayproject/ray:2.59.0-py311
+          command: [python, -u, /app/server.py]
+          ports:
+            - {name: http, containerPort: 8000}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: app, mountPath: /app, readOnly: true}
+      volumes:
+        - name: app
+          configMap:
+            name: vhmodels-inference-api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vhmodels-inference-api
+  labels:
+    app.kubernetes.io/part-of: vhmodels-inference
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: vhmodels-inference-api
+  ports:
+    - {name: http, port: 8000, targetPort: http}
