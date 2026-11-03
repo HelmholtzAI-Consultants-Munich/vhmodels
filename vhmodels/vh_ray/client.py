@@ -3,7 +3,7 @@
 import os
 import sys
 
-from vhmodels.vh_checker.factory import _unwrap_model_result
+from vhmodels.vh_checker.factory import _unwrap_model_result, check_input
 from vhmodels.vh_ray.actor import ModelActor
 from vhmodels.vh_ray.envs import image_runtime_env, model_runtime_env
 
@@ -39,6 +39,7 @@ class RayModelProxy:
         ray_options=None,
         timeout=None,
         image_path=None,
+        model_input=None,
     ):
         import ray
 
@@ -47,6 +48,7 @@ class RayModelProxy:
         self.project = project
         self.model = model
         self.timeout = timeout
+        self.model_input = model_input
         load_kwargs = load_kwargs or {}
         self.actor = (
             ray.remote(ModelActor)
@@ -67,11 +69,13 @@ class RayModelProxy:
         return self._call("info")
 
     def embed(self, input, **kwargs):
+        check_input(self.model_input, input)
         return _unwrap_model_result(
             self._call("embed", input, cwd=os.getcwd(), **kwargs)
         )
 
     def predict(self, input, embedding=None, **kwargs):
+        check_input(self.model_input, input)
         return _unwrap_model_result(
             self._call("predict", input, embedding=embedding, cwd=os.getcwd(), **kwargs)
         )

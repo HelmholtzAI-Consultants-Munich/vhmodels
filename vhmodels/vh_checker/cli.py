@@ -341,20 +341,35 @@ def create_apptainer_image(project, output):
 
 
 @main.command()
-@click.argument("project")
+@click.argument("project", required=False)
+@click.option("--all", "all_models", is_flag=True, help="Build every model with runtimes.uv.")
 @click.option("--force", is_flag=True, help="Rebuild an up-to-date venv.")
-def create_ray_env(project, force):
+def create_ray_env(project, all_models, force):
     """Create the uv venv (under $VHMODELS_VENV_DIR) a model's Ray actor runs in."""
     from vhmodels.vh_ray.envs import build_model_venv
 
-    if not REGISTRY.has_model(project):
+    if all_models == bool(project):
+        raise click.UsageError("Pass either a PROJECT or --all.")
+    if project and not REGISTRY.has_model(project):
         raise click.ClickException(f"Model '{project}' is not registered.")
-    try:
-        build_model_venv(project, REGISTRY.get_model(project), force=force)
-    except subprocess.CalledProcessError as error:
-        raise click.ClickException(f"Failed to build the Ray venv for '{project}'.") from error
-    except (FileNotFoundError, RuntimeError) as error:
-        raise click.ClickException(str(error)) from error
+    if all_models:
+        models = REGISTRY.list_models().items()
+        projects = [name for name, manifest in models if manifest.runtimes.uv]
+    else:
+        projects = [project]
+    # With --all, one failed build does not stop the others.
+    failed = []
+    for name in projects:
+        try:
+            build_model_venv(name, REGISTRY.get_model(name), force=force)
+        except subprocess.CalledProcessError:
+            failed.append(name)
+            click.echo(f"Failed to build the Ray venv for '{name}'.", err=True)
+        except (FileNotFoundError, RuntimeError) as error:
+            failed.append(name)
+            click.echo(str(error), err=True)
+    if failed:
+        raise click.ClickException(f"Ray venvs not built: {', '.join(failed)}.")
 
 
 @main.command()

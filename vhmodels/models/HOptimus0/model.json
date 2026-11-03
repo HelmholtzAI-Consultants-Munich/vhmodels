@@ -8,7 +8,8 @@
   },
   "implementation": {
     "class_path": "HOptimus0.model.HOptimus0",
-    "capabilities": ["embed"]
+    "capabilities": ["embed"],
+    "input": { "type": "images" }
   },
   "supported_platforms": ["linux-x86_64"],
   "runtimes": {

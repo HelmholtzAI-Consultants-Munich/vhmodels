@@ -7,6 +7,13 @@ applications:
       project: hyformer
       model: hyformer_molecules_8M
       device: cuda:0
+      # Two replicas share one GPU.
+      ray_options:
+        num_gpus: 0.5
+    # Serve settings only; `ray_actor_options` here would replace the model's runtime_env.
+    deployments:
+      - name: ModelDeployment
+        num_replicas: 2
   - name: prottrans
     route_prefix: /prottrans
     import_path: vhmodels.vh_ray.serve.deployment:build_app

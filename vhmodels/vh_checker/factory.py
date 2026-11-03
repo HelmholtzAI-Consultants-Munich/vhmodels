@@ -46,6 +46,12 @@ def resolve_ray_model(project, model=None, image_path=None):
     return variant, resources, image_path
 
 
+def check_input(model_input, input):
+    """Check ``input`` against the manifest's ``implementation.input``, if any."""
+    if model_input is not None:
+        model_input.check(input)
+
+
 def _extract_frame(stdout, stderr):
     """Extract and decode one RESULT_MARKER-framed JSON value."""
 
@@ -95,10 +101,12 @@ class ModelProxy:
         runtime="conda",
         timeout=DEFAULT_TIMEOUT,
         load_kwargs=None,
+        model_input=None,
     ):
         self.project = project
         self.model = model
         self.runtime = runtime
+        self.model_input = model_input
         self.env_name = env_name
         self.timeout = timeout
         self.load_kwargs = load_kwargs or {}
@@ -155,6 +163,7 @@ class ModelProxy:
                 )
 
     def embed(self, input, **kwargs):
+        check_input(self.model_input, input)
         self._ensure_backend_available()
         raw_result = self._process_manager.embed(
             input=input,
@@ -164,6 +173,7 @@ class ModelProxy:
         return _unwrap_model_result(raw_result)
 
     def predict(self, input, embedding=None, **kwargs):
+        check_input(self.model_input, input)
         self._ensure_backend_available()
         raw_result = self._process_manager.predict(
             input=input,
@@ -197,6 +207,7 @@ def load_model(
         raise ValueError(f"Model '{project}' not found.")
 
     manifest = registry.get_model(project)
+    model_input = manifest.implementation.input
     conda_runtime = manifest.runtimes.conda
     env_name = conda_runtime.env_name if conda_runtime else f"vhmodels-{project}"
     if runtime == "apptainer":
@@ -220,6 +231,7 @@ def load_model(
             load_kwargs=load_kwargs,
             ray_options=ray_options,
             image_path=image_path,
+            model_input=model_input,
         )
     if ray_options is not None:
         raise ValueError("ray_options can only be used with runtime='ray'.")
@@ -230,4 +242,5 @@ def load_model(
         model=model,
         runtime=runtime,
         load_kwargs=load_kwargs,
+        model_input=model_input,
     )

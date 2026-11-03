@@ -15,9 +15,14 @@
 
 set -euo pipefail
 
-CONFIG_FILE="${1:?Usage: sbatch ray_cluster.sbatch /absolute/path/config.json}"
+CONFIG_FILE="${1:?Usage: sbatch ray_cluster.sbatch /absolute/path/config.json [serve.yaml]}"
 if [[ "${CONFIG_FILE}" != /* || ! -f "${CONFIG_FILE}" ]]; then
     echo "ERROR: Pass an absolute path to an existing config.json." >&2
+    exit 1
+fi
+SERVE_CONFIG="${2:-}"
+if [[ -n "${SERVE_CONFIG}" && ( "${SERVE_CONFIG}" != /* || ! -f "${SERVE_CONFIG}" ) ]]; then
+    echo "ERROR: Pass an absolute path to an existing Serve config." >&2
     exit 1
 fi
 
@@ -96,5 +101,8 @@ ray start --head \
 # Serve keeps these HTTP options for every app deployed later with `serve deploy`.
 serve start --address="${HEAD_NODE}:${RAY_PORT}" \
     --http-host=0.0.0.0 --http-port="${SERVE_PORT}"
+if [[ -n "${SERVE_CONFIG}" ]]; then
+    serve deploy --address="http://${HEAD_NODE}:${DASHBOARD_PORT}" "${SERVE_CONFIG}"
+fi
 # Keep the cluster up until `scancel` or the time limit.
 sleep infinity

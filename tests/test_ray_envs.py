@@ -134,6 +134,29 @@ def test_create_ray_env_cli(monkeypatch):
     assert result.exit_code == 1
     assert "is not registered" in result.output
 
+    result = CliRunner().invoke(cli.main, ["create-ray-env"])
+    assert result.exit_code == 2
+    assert "either a PROJECT or --all" in result.output
+
+
+def test_create_ray_env_all_builds_every_uv_model_despite_failures(monkeypatch):
+    calls = []
+
+    def build(project, manifest, force):
+        calls.append(project)
+        if project == "mole":
+            raise subprocess.CalledProcessError(1, "uv")
+
+    monkeypatch.setattr(envs, "build_model_venv", build)
+
+    result = CliRunner().invoke(cli.main, ["create-ray-env", "--all"])
+
+    assert sorted(calls) == sorted(
+        name for name, manifest in REGISTRY.list_models().items() if manifest.runtimes.uv
+    )
+    assert result.exit_code == 1
+    assert "Ray venvs not built: mole." in result.output
+
 
 def test_load_model_checks_venv_and_resolves_on_the_host(monkeypatch):
     created, checked = [], []
@@ -165,8 +188,18 @@ def test_load_model_checks_venv_and_resolves_on_the_host(monkeypatch):
             "load_kwargs": {},
             "ray_options": {"num_cpus": 2},
             "image_path": None,
+            "model_input": REGISTRY.get_model("hyformer").implementation.input,
         }
     ]
+
+
+def test_proxies_reject_input_of_the_wrong_shape_before_running():
+    model_input = REGISTRY.get_model("hyformer").implementation.input
+    proxy = factory.ModelProxy("hyformer", "unused-env", model_input=model_input)
+
+    # A bare SMILES string would otherwise be split into characters.
+    with pytest.raises(ValueError, match="a list of strings"):
+        proxy.embed("CCO")
 
 
 def test_load_model_rejects_ray_options_for_other_runtimes():
@@ -304,7 +337,12 @@ def test_serve_build_app_runs_the_replica_in_the_model_venv(monkeypatch):
     )
 
     app = deployment.build_app(
-        {"project": "hyformer", "model": "hyformer_molecules_8M", "device": "cuda:0"}
+        {
+            "project": "hyformer",
+            "model": "hyformer_molecules_8M",
+            "device": "cuda:0",
+            "ray_options": {"num_gpus": 0.5},
+        }
     )
 
     assert app == "app"
@@ -312,8 +350,84 @@ def test_serve_build_app_runs_the_replica_in_the_model_venv(monkeypatch):
         {
             "ray_actor_options": {
                 "runtime_env": envs.model_runtime_env("hyformer"),
-                "num_gpus": 1,
+                "num_gpus": 0.5,
             }
         },
-        ("hyformer", "hyformer_molecules_8M", resources, {"device": "cuda:0"}),
+        (
+            "hyformer",
+            "hyformer_molecules_8M",
+            resources,
+            {"device": "cuda:0"},
+            REGISTRY.get_model("hyformer").implementation.input,
+        ),
     ]
+
+
+@pytest.mark.parametrize(
+    "input",
+    [["CCO", "MKTAYIAK"], "/data/molecules.tsv", {"data": "/data/cells.h5ad"}],
+)
+def test_serve_request_takes_every_input_modality_and_kwargs(input):
+    pytest.importorskip("ray.serve")
+    from vhmodels.vh_ray.serve.deployment import ModelRequest, call_model
+
+    request = ModelRequest(input=input, batch_size=2, embedding={"a": [0.5]})
+
+    assert call_model(lambda **kwargs: kwargs, request) == {
+        "input": input,
+        "batch_size": 2,
+        "embedding": {"a": [0.5]},
+    }
+
+
+def test_serve_request_rejects_input_of_the_wrong_shape():
+    pytest.importorskip("ray.serve")
+    from pydantic import ValidationError
+
+    from vhmodels.vh_ray.serve.deployment import ModelRequest
+
+    with pytest.raises(ValidationError):
+        ModelRequest(input=5)
+
+
+def test_serve_rejects_input_the_model_does_not_take():
+    pytest.importorskip("ray.serve")
+    from fastapi import HTTPException
+
+    from vhmodels.vh_ray.serve.deployment import ModelRequest, call_model
+
+    model_input = REGISTRY.get_model("hyformer").implementation.input
+
+    with pytest.raises(HTTPException) as raised:
+        call_model(lambda **kwargs: kwargs, ModelRequest(input="CCO"), model_input)
+
+    assert raised.value.status_code == 422
+    assert "a list of strings" in raised.value.detail
+
+
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [
+        (ValueError("Invalid SMILES"), 400),
+        (TypeError("unexpected keyword argument"), 400),
+        (FileNotFoundError("missing.tsv"), 400),
+        (NotImplementedError(), 501),
+        (RuntimeError("CUDA out of memory"), None),
+    ],
+)
+def test_serve_returns_model_input_errors_as_http_errors(error, status):
+    pytest.importorskip("ray.serve")
+    from fastapi import HTTPException
+
+    from vhmodels.vh_ray.serve.deployment import ModelRequest, call_model
+
+    def method(**kwargs):
+        raise error
+
+    # Other errors stay server errors (500).
+    expected = HTTPException if status else type(error)
+    with pytest.raises(expected) as raised:
+        call_model(method, ModelRequest(input=["CCO"]))
+    if status:
+        assert raised.value.status_code == status
+        assert str(error) in raised.value.detail

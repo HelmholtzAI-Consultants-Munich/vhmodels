@@ -8,7 +8,8 @@
   },
   "implementation": {
     "class_path": "MolE.model.MolE",
-    "capabilities": ["embed", "predict"]
+    "capabilities": ["embed", "predict"],
+    "input": { "type": "file" }
   },
   "supported_platforms": ["linux-x86_64", "macos-arm64"],
   "runtimes": {
