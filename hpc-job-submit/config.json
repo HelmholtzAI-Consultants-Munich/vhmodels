@@ -6,6 +6,7 @@
   "HF_CACHE_DIR": null,
   "TORCH_CACHE_DIR": null,
   "MODEL": "nicheformer",
+  "IMAGE_TAG": null,
   "INFERENCE_SCRIPT": null,
   "DATA_DIR": null,
   "OUTPUT_DIR": null

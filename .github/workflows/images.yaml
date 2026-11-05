@@ -1,0 +1,186 @@
+name: Model images
+
+on:
+  push:
+    branches:
+      - main
+      - ray
+    paths:
+      - "vhmodels/**"
+      - ".dockerignore"
+      - ".github/workflows/images.yaml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "vhmodels/**"
+      - ".dockerignore"
+      - ".github/workflows/images.yaml"
+  workflow_dispatch:
+    inputs:
+      models:
+        description: Space-separated model IDs (empty builds all models)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Select models
+    runs-on: ubuntu-latest
+    outputs:
+      models: ${{ steps.select.outputs.models }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install package
+        run: python -m pip install -e ".[cli]"
+
+      - name: Select models
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          MODELS: ${{ inputs.models }}
+          ONLY_MODELS: ${{ github.ref_name == 'ray' && 'mole' || '' }}
+        run: |
+          # Image specs: all models, the requested ones, or the changed ones
+          if [[ "${EVENT}" == workflow_dispatch ]]; then
+            vh-checker image-spec ${MODELS} > specs.json
+          elif ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            vh-checker image-spec > specs.json
+          else
+            changed="$(git diff --name-only "${BASE}" "${GITHUB_SHA}")"
+            shared="$(grep -E '^(vhmodels/|\.dockerignore$|\.github/workflows/images\.yaml$)' <<< "${changed}" \
+              | grep -vE '^vhmodels/models/[^/]+/' || true)"
+            if [[ -n "${shared}" ]]; then
+              vh-checker image-spec > specs.json
+            else
+              dirs="$(grep -oP '^vhmodels/models/\K[^/]+(?=/)' <<< "${changed}" | sort -u || true)"
+              vh-checker image-spec \
+                | jq 'map(select(.model_dir | IN($ARGS.positional[])))' --args ${dirs} > specs.json
+            fi
+          fi
+
+          # Branch-specific model subset
+          if [[ -n "${ONLY_MODELS}" ]]; then
+            jq 'map(select(.id | IN($ARGS.positional[])))' specs.json --args ${ONLY_MODELS} > subset.json
+            mv subset.json specs.json
+          fi
+
+          # One matrix entry per model; build args as KEY=VALUE lines
+          models="$(jq -c 'map(.build_args |= (to_entries | map("\(.key)=\(.value)") | join("\n")))' specs.json)"
+          echo "models=${models}" >> "${GITHUB_OUTPUT}"
+          jq -r '.[].id' specs.json
+
+  build:
+    name: ${{ matrix.model.id }}
+    needs: plan
+    if: needs.plan.outputs.models != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ${{ fromJSON(needs.plan.outputs.models) }}
+
+    env:
+      PUSH: ${{ github.event_name != 'pull_request' }}
+      TEST_IMAGE: vhmodels-test:${{ matrix.model.id }}
+
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost
+          docker image prune --all --force
+          df -h /
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Image name and tags
+        id: meta
+        env:
+          IMAGE_NAME: ${{ matrix.model.image }}
+          VERSION_TAG: ${{ matrix.model.tag }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}"
+          tags="${image}:sha-${GITHUB_SHA::7}"
+          if [[ "${GITHUB_REF_NAME}" == main ]]; then
+            tags+=",${image}:${VERSION_TAG},${image}:latest"
+          else
+            tags+=",${image}:${GITHUB_REF_NAME//\//-}"
+          fi
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+          echo "tags=${tags}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: vhmodels/envs/Dockerfile
+          build-args: ${{ matrix.model.build_args }}
+          load: true
+          tags: ${{ env.TEST_IMAGE }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache
+          cache-to: ${{ env.PUSH == 'true' && format('type=registry,ref={0}:buildcache,mode=max', steps.meta.outputs.image) || '' }}
+
+      - name: Smoke test
+        env:
+          MODEL_DIR: ${{ matrix.model.model_dir }}
+          BUILD_ARGS: ${{ matrix.model.build_args }}
+        run: |
+          ray_version="$(sed -n 's/^RAY_VERSION=//p' <<< "${BUILD_ARGS}")"
+          docker run --rm --user "$(id -u):$(id -g)" "${TEST_IMAGE}" \
+            /opt/venv/bin/python -c "
+          import ray, torch
+          import vhmodels.models.${MODEL_DIR}.model
+          assert ray.__version__ == '${ray_version}', ray.__version__
+          assert torch.version.cuda, 'torch has no CUDA build'
+          print('ray', ray.__version__, 'torch', torch.__version__, 'cuda', torch.version.cuda)
+          "
+
+      - name: Push
+        if: env.PUSH == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: vhmodels/envs/Dockerfile
+          build-args: ${{ matrix.model.build_args }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ matrix.model.tag }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.image }}:buildcache
