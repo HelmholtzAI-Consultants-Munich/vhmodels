@@ -1,8 +1,15 @@
 """Ray Serve app: one model as an HTTP deployment in its own image or venv."""
 
-from fastapi import FastAPI, HTTPException
+import json
+import shutil
+import tempfile
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 from ray import serve
+from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile
 
 from vhmodels.vh_checker.factory import _get_registry, check_input, resolve_ray_model
 from vhmodels.vh_ray.actor import ModelActor
@@ -35,6 +42,46 @@ def call_model(method, request, model_input=None):
         raise HTTPException(501, f"{type(error).__name__}: {error}") from error
 
 
+def save_uploads(form, model_input, directory):
+    """Write the uploaded files to ``directory``; return their paths as ``input``."""
+    if model_input is None or model_input.type == "sequences":
+        raise HTTPException(
+            415, "This model takes JSON input; POST to /embed or /predict."
+        )
+    paths = []
+    for index, (field, upload) in enumerate(form.multi_items()):
+        if not isinstance(upload, UploadFile):
+            continue
+        # The file name only: models read its suffix, and it stays in ``directory``.
+        name = Path(upload.filename or "").name
+        path = Path(directory, str(index), name if name not in ("", "..") else "input")
+        path.parent.mkdir()
+        with path.open("wb") as file:
+            shutil.copyfileobj(upload.file, file)
+        paths.append((field, str(path)))
+    if model_input.type == "named_files":
+        return dict(paths)
+    inputs = [path for field, path in paths if field == "input"]
+    if not inputs:
+        raise HTTPException(422, "No files uploaded in the 'input' field.")
+    return inputs[0] if model_input.type == "file" and len(inputs) == 1 else inputs
+
+
+def call_model_with_files(method, form, model_input):
+    """Call ``method`` on the uploaded files, saved for this request only."""
+    try:
+        kwargs = json.loads(form.get("kwargs") or "{}")
+    except json.JSONDecodeError as error:
+        raise HTTPException(422, f"kwargs is not valid JSON: {error}") from error
+    if not isinstance(kwargs, dict) or "input" in kwargs:
+        raise HTTPException(422, "kwargs must be a JSON object without 'input'.")
+    with tempfile.TemporaryDirectory(prefix="vhmodels-upload-") as directory:
+        request = ModelRequest(
+            input=save_uploads(form, model_input, directory), **kwargs
+        )
+        return call_model(method, request, model_input)
+
+
 # One request at a time per replica, like a plain model actor.
 @serve.deployment(max_ongoing_requests=1)
 @serve.ingress(api)
@@ -50,6 +97,21 @@ class ModelDeployment(ModelActor):
     @api.post("/predict")
     def http_predict(self, request: ModelRequest):
         return call_model(self.predict, request, self.model_input)
+
+    # File contents, for clients that don't share the replica's disk.
+    @api.post("/embed/files")
+    async def http_embed_files(self, request: Request):
+        async with request.form() as form:
+            return await run_in_threadpool(
+                call_model_with_files, self.embed, form, self.model_input
+            )
+
+    @api.post("/predict/files")
+    async def http_predict_files(self, request: Request):
+        async with request.form() as form:
+            return await run_in_threadpool(
+                call_model_with_files, self.predict, form, self.model_input
+            )
 
     @api.get("/info")
     def http_info(self):

@@ -61,7 +61,7 @@ def test_build_commands_mirror_the_image_build(tmp_path):
         "--torch-backend", "cu118",
         "--excludes", str(spec.exclude_path),
         "--requirements", str(spec.requirements_path),
-        "ray[serve]==2.59.0",
+        "ray[serve]==2.59.0", "python-multipart",
     ]  # fmt: skip
     assert commands[2][-1] == "/repo"
     assert commands[3][-1].endswith("vhmodels.models.Hyformer.model")
@@ -70,7 +70,11 @@ def test_build_commands_mirror_the_image_build(tmp_path):
 def test_build_commands_without_spec_install_only_ray(tmp_path):
     commands = envs.build_commands(UvSpec(), tmp_path, _VERSIONS)
 
-    assert commands[1][-2:] == ["--compile-bytecode", "ray[serve]==2.59.0"]
+    assert commands[1][-3:] == [
+        "--compile-bytecode",
+        "ray[serve]==2.59.0",
+        "python-multipart",
+    ]
     assert commands[3][-1] == "import ray, vhmodels.vh_ray.actor"
 
 

@@ -88,7 +88,7 @@ Serve configs are the same as on Slurm ([docs/ray.md](../docs/ray.md#kubernetes)
 | Placement | `runtime_env.py_executable` | `label_selector` `vhmodels/project=<id>` |
 | Sources | the driver downloads them to the shared filesystem | the actor downloads them to its pod's volume |
 | Ray Core inputs | shared filesystem | the job's `working_dir` |
-| Serve inputs | paths on the shared filesystem | paths on the replica's pod |
+| Serve inputs | paths on the shared filesystem, or uploads | paths on the replica's pod, or uploads ([File uploads](../docs/ray.md#file-uploads)) |
 
 **Run** ([images/run.sh](images/run.sh)): deploys the head, the MolE worker
 and the Serve config, runs the unchanged `examples/mole.py` as a Ray job,
@@ -110,6 +110,7 @@ kubectl -n chc port-forward svc/vhmodels-head 8265:8265 8000:8000 &
 .venv/bin/ray job submit --address http://localhost:8265 --working-dir <dir> -- python <script>.py
 kubectl -n chc cp example_data/MolE/examples_molecules.tsv vhmodels-mole-0:/cache/in.tsv
 curl -H 'Content-Type: application/json' -d '{"input": "/cache/in.tsv"}' localhost:8000/mole/predict
+curl -F input=@example_data/MolE/examples_molecules.tsv localhost:8000/mole/predict/files
 curl localhost:8000/mole/info
 
 # change the Serve config: apply, wait until the mounted copy updates (up to a minute), deploy
@@ -324,7 +325,5 @@ kubectl -n chc delete -R -f k8s/service -f k8s/tests/smoke/api.yaml --ignore-not
 
 ## Next steps
 
-1. **Inputs over HTTP.** Serve takes file paths, which must exist on the
-   replica's pod; MolE's table is copied there first.
-2. More models, then GPU workers on the GPU node.
-3. Ingress with HTTPS for the Serve proxy.
+1. More models, then GPU workers on the GPU node.
+2. Ingress with HTTPS for the Serve proxy.

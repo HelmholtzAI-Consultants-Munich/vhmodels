@@ -122,11 +122,19 @@ def test_ray_actor_runs_in_model_venv(model_venv, ray_cluster, monkeypatch, tmp_
         model.embed("after close")
 
 
-def test_serve_app_runs_in_model_venv(model_venv, ray_cluster):
+def test_serve_app_runs_in_model_venv(model_venv, ray_cluster, monkeypatch):
+    import requests
     from ray import serve
 
+    from vhmodels.models.schema import ModelInput
     from vhmodels.vh_ray.serve.deployment import build_app
 
+    # Image-style input, so uploaded files reach the model as a list of paths.
+    monkeypatch.setattr(
+        factory._get_registry().get_model(_PROJECT).implementation,
+        "input",
+        ModelInput(type="images"),
+    )
     port = _free_port()
     serve.start(http_options={"host": "127.0.0.1", "port": port})
     try:
@@ -157,6 +165,17 @@ def test_serve_app_runs_in_model_venv(model_venv, ray_cluster):
         handle = serve.get_app_handle(_PROJECT)
         info = handle.info.remote().result()
         over_handle = handle.embed.remote(["over-handle"]).result()["output"]
+        uploaded = requests.post(
+            f"http://127.0.0.1:{port}/{_PROJECT}/embed/files",
+            files=[("input", ("b.tif", b"b")), ("input", ("../a.tif", b"a"))],
+            data={"kwargs": json.dumps({"batch_size": 2})},
+            timeout=60,
+        )
+        no_files = requests.post(
+            f"http://127.0.0.1:{port}/{_PROJECT}/embed/files",
+            data={"kwargs": "{}"},
+            timeout=60,
+        )
     finally:
         serve.shutdown()
 
@@ -170,3 +189,12 @@ def test_serve_app_runs_in_model_venv(model_venv, ray_cluster):
     assert over_http["pid"] == over_handle["pid"] == info["pid"]
     assert over_http["load_id"] == over_handle["load_id"]
     assert [over_http["embed_count"], over_handle["embed_count"]] == [1, 2]
+    # Uploads reach the model as paths, in order and without directories.
+    assert uploaded.status_code == 200, uploaded.text
+    over_upload = uploaded.json()["output"]
+    assert [Path(path).name for path in over_upload["input"]] == ["b.tif", "a.tif"]
+    assert over_upload["kwargs"] == {"batch_size": 2}
+    assert over_upload["embed_count"] == 3
+    # The files exist only while the request runs.
+    assert not Path(over_upload["input"][0]).parent.parent.exists()
+    assert no_files.status_code == 422

@@ -6,7 +6,7 @@ Every model has an OCI image on GHCR, built from [`vhmodels/envs/Dockerfile`](..
 
 | Path | Content |
 | --- | --- |
-| `/opt/venv` | Python `MODEL_PYTHON`, the model's `runtimes.uv` requirements and `ray[serve]==RAY_VERSION` (`vhmodels/utils/uv_utils.py`) |
+| `/opt/venv` | Python `MODEL_PYTHON`, the model's `runtimes.uv` requirements, `ray[serve]==RAY_VERSION` (`vhmodels/utils/uv_utils.py`) and `python-multipart` (Serve file uploads) |
 | `/opt/vhmodels-src` | The vhmodels package (`PYTHONPATH`) |
 
 - Image: `ghcr.io/helmholtzai-consultants-munich/vhmodels-<model id>`
