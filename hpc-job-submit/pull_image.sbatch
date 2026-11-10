@@ -26,7 +26,7 @@ IMAGE_TAG="$(jq -r '.IMAGE_TAG // "latest"' "${CONFIG_FILE}")"
 
 # OCI image on GHCR, built by .github/workflows/images.yaml.
 IMAGE_REPO="${VHMODELS_IMAGE_REPO:-ghcr.io/helmholtzai-consultants-munich}"
-IMAGE_URI="docker://${IMAGE_REPO}/vhmodels-${MODEL}:${IMAGE_TAG}"
+IMAGE_REF="${IMAGE_REPO}/vhmodels-${MODEL}:${IMAGE_TAG}"
 
 # Apptainer executable.
 APPTAINER_BIN="/usr/bin/apptainer"
@@ -60,8 +60,18 @@ trap cleanup EXIT
 
 mkdir -p "${APPTAINER_TMPDIR}"
 
-echo "Pulling ${IMAGE_URI} ..."
-"${APPTAINER_BIN}" pull "${TEMP_IMAGE}" "${IMAGE_URI}"
+# The OCI image plus the worker %startscript of the Apptainer runtime.
+DEFINITION="${SCRATCH_DIR}/vhmodels-${MODEL}.def"
+cat > "${DEFINITION}" <<DEF
+Bootstrap: docker
+From: ${IMAGE_REF}
+
+%startscript
+    exec /opt/venv/bin/python -m vhmodels.vh_checker.worker serve "\$@"
+DEF
+
+echo "Converting ${IMAGE_REF} ..."
+"${APPTAINER_BIN}" build "${TEMP_IMAGE}" "${DEFINITION}"
 
 mv -f -- "${TEMP_IMAGE}" "${IMAGE_PATH}"
 trap - EXIT

@@ -33,7 +33,7 @@ Apptainer. `APPTAINER_CACHEDIR` stays on the host and is used by Apptainer
 itself. These are separate caches with separate contents.
 
 - `build_apptainer.sbatch` builds the image for the configured model.
-- `pull_image.sbatch` pulls the configured model's OCI image from GHCR into `IMAGE_DIR` as `.sif`, for the Ray runtime ([docs/images.md](../docs/images.md)).
+- `pull_image.sbatch` converts the configured model's OCI image from GHCR into `IMAGE_DIR` as `.sif`, for the Apptainer and Ray runtimes ([docs/images.md](../docs/images.md)).
 - `run_inference.sbatch` runs CPU inference.
 - `run_inference_gpu.sbatch` runs inference on one NVIDIA GPU.
 - `convert_safetensors.sbatch` runs Hugging Face's official converter on a CPU node and opens a conversion PR.

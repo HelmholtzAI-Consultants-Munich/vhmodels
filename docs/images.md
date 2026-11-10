@@ -32,7 +32,8 @@ Every model has an OCI image on GHCR, built from [`vhmodels/envs/Dockerfile`](..
 | --- | --- |
 | Slurm | `sbatch hpc-job-submit/pull_image.sbatch /abs/config.json` writes `<IMAGE_DIR>/vhmodels-<MODEL>.sif` (tag: `IMAGE_TAG`, default `latest`) |
 | Kubernetes | Use `ghcr.io/helmholtzai-consultants-munich/vhmodels-<model id>:<tag>` as the container image |
-| Local | `apptainer pull vhmodels-<model id>.sif docker://ghcr.io/helmholtzai-consultants-munich/vhmodels-<model id>:<tag>` |
+| Local (Ray runtime only) | `apptainer pull vhmodels-<model id>.sif docker://ghcr.io/helmholtzai-consultants-munich/vhmodels-<model id>:<tag>` |
 
-- Pulled images serve the [Ray runtime](ray.md#model-images). The legacy `runtime="apptainer"` still needs `build_apptainer.sbatch`, because it starts the image's `%startscript`.
+- **Both runtimes.** A plain `apptainer pull` has no `%startscript`, which `runtime="apptainer"` starts. `pull_image.sbatch` therefore builds the `.sif` from the OCI image plus the worker `%startscript`, so it serves both the [Ray runtime](ray.md#model-images) and `runtime="apptainer"`.
+- **`build_apptainer.sbatch`** still builds the same image locally from `vhmodels/envs/Apptainer`, without GHCR.
 - Private packages need credentials: `APPTAINER_DOCKER_USERNAME` / `APPTAINER_DOCKER_PASSWORD` (a PAT with `read:packages`) on Slurm, and an `imagePullSecret` on Kubernetes.
