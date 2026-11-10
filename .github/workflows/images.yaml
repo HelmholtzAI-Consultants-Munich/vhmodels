@@ -4,8 +4,7 @@ on:
   push:
     branches:
       - main
-      - ray
-      - ray-serve
+      - "ray*"
     paths:
       - "vhmodels/**"
       - ".dockerignore"
@@ -85,7 +84,11 @@ jobs:
             mv subset.json specs.json
           fi
 
-          # One matrix entry per model; build args as KEY=VALUE lines
+          # Model-free Ray head image, in every run
+          jq -s add specs.json <(vh-checker image-spec --head) > all.json
+          mv all.json specs.json
+
+          # One matrix entry per image; build args as KEY=VALUE lines
           models="$(jq -c 'map(.build_args |= (to_entries | map("\(.key)=\(.value)") | join("\n")))' specs.json)"
           echo "models=${models}" >> "${GITHUB_OUTPUT}"
           jq -r '.[].id' specs.json
@@ -164,12 +167,15 @@ jobs:
           ray_version="$(sed -n 's/^RAY_VERSION=//p' <<< "${BUILD_ARGS}")"
           docker run --rm --user "$(id -u):$(id -g)" "${TEST_IMAGE}" \
             /opt/venv/bin/python -c "
-          import ray, ray.serve, torch
-          import vhmodels.models.${MODEL_DIR}.model
+          import importlib, ray, ray.serve
           import vhmodels.vh_ray.serve.deployment
           assert ray.__version__ == '${ray_version}', ray.__version__
-          assert torch.version.cuda, 'torch has no CUDA build'
-          print('ray', ray.__version__, 'torch', torch.__version__, 'cuda', torch.version.cuda)
+          print('ray', ray.__version__)
+          if '${MODEL_DIR}':
+              import torch
+              importlib.import_module('vhmodels.models.${MODEL_DIR}.model')
+              assert torch.version.cuda, 'torch has no CUDA build'
+              print('torch', torch.__version__, 'cuda', torch.version.cuda)
           "
 
       - name: Push

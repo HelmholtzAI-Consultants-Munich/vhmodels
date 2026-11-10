@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# MolE from its GHCR ray-serve image, with vhmodels as the image ships it:
-#   1. deploy the Ray head and a MolE worker node, both from the image,
+# MolE from its GHCR ray-kubernetes image, with vhmodels as the image ships it:
+#   1. deploy the Ray head (model-free head image) and a MolE worker node,
 #   2. Ray Core: the unchanged examples/mole.py as a Ray job,
 #   3. Ray Serve: wait for /mole, which the head deploys from serve.yaml on
 #      start, and POST the same table to it,
@@ -30,7 +30,7 @@ trap cleanup EXIT
 
 check_ray
 
-echo "--- applying manifests (a node without the image pulls it first, ~5 min)"
+echo "--- applying manifests (a node without the MolE image pulls it first, ~5 min)"
 apply_manifests "$HERE/serve.yaml" "$HERE/head.yaml" "$HERE/mole.yaml"
 kubectl -n "$NS" rollout status deploy/vhmodels-head --timeout=15m
 kubectl -n "$NS" rollout status statefulset/vhmodels-mole --timeout=15m

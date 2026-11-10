@@ -329,6 +329,21 @@ def test_image_spec_lists_oci_build_args():
     assert specs[1]["build_args"]["TORCH_BACKEND"] == ""
 
 
+def test_image_spec_lists_the_model_free_head():
+    result = CliRunner().invoke(cli.main, ["image-spec", "--head"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == [
+        {
+            "id": "head",
+            "model_dir": "",
+            "image": "vhmodels-head",
+            "tag": "ray2.59.0",
+            "build_args": {"PYTHON_VERSION": "3.11.15", "RAY_VERSION": "2.59.0"},
+        }
+    ]
+
+
 def test_image_spec_rejects_unknown_model():
     result = CliRunner().invoke(cli.main, ["image-spec", "unknown"])
 

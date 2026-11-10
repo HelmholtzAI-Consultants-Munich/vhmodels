@@ -1,11 +1,12 @@
 # syntax=docker/dockerfile:1
-# Per-model OCI image; build context is the repository root.
+# Per-model OCI image, or the model-free Ray head image without MODEL_DIR and
+# REQUIREMENTS_FILE; build context is the repository root.
 FROM ghcr.io/astral-sh/uv:0.12.3 AS uv
 
 FROM docker.io/library/ubuntu:24.04
 
-ARG MODEL_DIR
-ARG REQUIREMENTS_FILE
+ARG MODEL_DIR=""
+ARG REQUIREMENTS_FILE=""
 ARG EXCLUDE_FILE=""
 ARG TORCH_BACKEND=""
 ARG PYTHON_VERSION
@@ -35,7 +36,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && uv pip install --python /opt/venv/bin/python --compile-bytecode \
         ${TORCH_BACKEND:+--torch-backend "$TORCH_BACKEND"} \
         ${EXCLUDE_FILE:+--excludes "/opt/requirements/$EXCLUDE_FILE"} \
-        --requirements "/opt/requirements/$REQUIREMENTS_FILE" "ray[serve]==$RAY_VERSION"
+        ${REQUIREMENTS_FILE:+--requirements "/opt/requirements/$REQUIREMENTS_FILE"} \
+        "ray[serve]==$RAY_VERSION"
 
 # vhmodels source
 COPY vhmodels /opt/vhmodels-src/vhmodels
@@ -44,6 +46,6 @@ ENV VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:$PATH \
     PYTHONPATH=/opt/vhmodels-src
 
-RUN python -c "import vhmodels.models.${MODEL_DIR}.model"
+RUN python -c "import vhmodels${MODEL_DIR:+.models.$MODEL_DIR.model}"
 
 CMD ["python", "-m", "vhmodels.vh_checker.worker", "serve"]

@@ -203,4 +203,4 @@ With `VHMODELS_IMAGE_NODES=1`, each model's OCI image runs as Ray worker pods, s
 
 1. **Multi-node Slurm.** Let GPU jobs join the cluster as workers (`ray start --address=<head> --block`), with the head on a CPU node, and add GPU-type resources. Every Ray port must then be in 60001–64000.
 2. **Ray as default.** Make Ray the default runtime and retire Conda and Apptainer.
-3. **Kubernetes.** Model images as labeled Ray worker pods ([Kubernetes](#kubernetes)); next: inputs in the Serve request body, a model-free head image, GPU workers, KubeRay.
+3. **Kubernetes.** Model images as labeled Ray worker pods ([Kubernetes](#kubernetes)); next: inputs in the Serve request body, GPU workers, KubeRay.

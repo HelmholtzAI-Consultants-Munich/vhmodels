@@ -1,7 +1,8 @@
 # Ray head of the vhmodels service: dashboard, Jobs API, Serve controller and
-# HTTP proxy. It runs a model image because that already has everything a job
-# driver needs: vhmodels, ray[serve] and the Python of every model image
-# (MODEL_PYTHON). It hosts no model: --num-cpus=0 and no vhmodels/project label.
+# HTTP proxy. It runs the model-free head image (.github/workflows/images.yaml):
+# vhmodels, ray[serve] and the Python of every model image (MODEL_PYTHON),
+# without model dependencies. It hosts no model: --num-cpus=0 and no
+# vhmodels/project label.
 # The ports have no authentication and are only reached via `kubectl
 # port-forward`; the Service is ClusterIP.
 apiVersion: apps/v1
@@ -28,8 +29,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ray-head
-          # Follows the ray-serve branch; pin a sha-<commit> tag once it is stable.
-          image: ghcr.io/helmholtzai-consultants-munich/vhmodels-mole:ray-serve
+          # Follows the ray-kubernetes branch; pin a sha-<commit> tag once it is stable.
+          image: ghcr.io/helmholtzai-consultants-munich/vhmodels-head:ray-kubernetes
           imagePullPolicy: Always
           command:
             - ray

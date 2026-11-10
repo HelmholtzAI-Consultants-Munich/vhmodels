@@ -211,8 +211,22 @@ def _image_build_args(project, manifest):
 
 @main.command()
 @click.argument("projects", nargs=-1)
-def image_spec(projects):
+@click.option("--head", is_flag=True, help="Print the model-free Ray head image.")
+def image_spec(projects, head):
     """Print the OCI image name, tag and build args of models as JSON."""
+    if head:
+        if projects:
+            raise click.UsageError("--head takes no model IDs.")
+        spec = {
+            "id": "head",
+            "model_dir": "",
+            "image": "vhmodels-head",
+            "tag": f"ray{RAY_VERSION}",
+            "build_args": {"PYTHON_VERSION": MODEL_PYTHON, "RAY_VERSION": RAY_VERSION},
+        }
+        click.echo(json.dumps([spec], indent=2))
+        return
+
     models = REGISTRY.list_models()
     for project in projects:
         if project not in models:
