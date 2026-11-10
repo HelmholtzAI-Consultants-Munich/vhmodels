@@ -22,6 +22,11 @@ class ModelActor:
     def __init__(self, project, model, resources, load_kwargs=None, driver_paths=()):
         # Ray prepends the driver's script dir and cwd to sys.path (see docs/ray.md).
         hide_paths(driver_paths)
+        if resources is None:
+            # No filesystem shared with the driver (VHMODELS_IMAGE_NODES=1).
+            from vhmodels.vh_checker.factory import _resolve_resources
+
+            model, resources = _resolve_resources(project, model)
         self._model = BaseModel.get_class(project)()
         self._model.load_model(model, resources, **(load_kwargs or {}))
 

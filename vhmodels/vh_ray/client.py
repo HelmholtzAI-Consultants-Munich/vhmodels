@@ -3,9 +3,14 @@
 import os
 import sys
 
-from vhmodels.vh_checker.factory import _unwrap_model_result
+from vhmodels.vh_checker.factory import _unwrap_model_result, check_input
 from vhmodels.vh_ray.actor import ModelActor
-from vhmodels.vh_ray.envs import image_runtime_env, model_runtime_env
+from vhmodels.vh_ray.envs import (
+    image_node_selector,
+    image_nodes,
+    image_runtime_env,
+    model_runtime_env,
+)
 
 
 def _driver_paths():
@@ -20,6 +25,9 @@ def _actor_options(project, load_kwargs, ray_options=None, image_path=None):
     """Run the actor in the model's venv or image, on a GPU for CUDA devices."""
     gpu = str(load_kwargs.get("device", "auto")).startswith("cuda")
     options = {"num_gpus": 1 if gpu else 0, **(ray_options or {})}
+    if image_nodes():
+        # The node runs the model's image: its own Python is the model env.
+        return {"label_selector": image_node_selector(project), **options}
     if image_path:
         runtime_env = image_runtime_env(image_path, options["num_gpus"] > 0)
     else:
@@ -39,6 +47,7 @@ class RayModelProxy:
         ray_options=None,
         timeout=None,
         image_path=None,
+        model_input=None,
     ):
         import ray
 
@@ -47,6 +56,7 @@ class RayModelProxy:
         self.project = project
         self.model = model
         self.timeout = timeout
+        self.model_input = model_input
         load_kwargs = load_kwargs or {}
         self.actor = (
             ray.remote(ModelActor)
@@ -67,11 +77,13 @@ class RayModelProxy:
         return self._call("info")
 
     def embed(self, input, **kwargs):
+        check_input(self.model_input, input)
         return _unwrap_model_result(
             self._call("embed", input, cwd=os.getcwd(), **kwargs)
         )
 
     def predict(self, input, embedding=None, **kwargs):
+        check_input(self.model_input, input)
         return _unwrap_model_result(
             self._call("predict", input, embedding=embedding, cwd=os.getcwd(), **kwargs)
         )

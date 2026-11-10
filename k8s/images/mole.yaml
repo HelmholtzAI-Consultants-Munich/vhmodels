@@ -1,0 +1,84 @@
+# Ray worker node that runs MolE's image from GHCR (.github/workflows/images.yaml).
+# The image's Python, /opt/venv, is MolE's environment: with
+# VHMODELS_IMAGE_NODES=1, vhmodels places MolE's actors and Serve replicas here
+# through the vhmodels/project=mole node label, and they download the
+# manifest's sources to this pod's volume.
+#
+# A StatefulSet gives each pod its own persistent volume (Ceph `ssd`, one node
+# at a time), so the sources are downloaded once per pod and survive restarts
+# and image updates. Deleting the StatefulSet keeps the volume; delete it with
+# `kubectl -n chc delete pvc cache-vhmodels-mole-0`.
+# Another model is another copy of this file with its image, name, label,
+# resources and volume size.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vhmodels-mole
+  labels: &labels
+    app.kubernetes.io/name: vhmodels-mole
+    app.kubernetes.io/part-of: vhmodels-inference
+spec:
+  # Required by StatefulSets; Ray needs no Service for its workers.
+  serviceName: vhmodels-mole
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vhmodels-mole
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 100
+        # Makes the volume writable for the user.
+        fsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ray-worker
+          # Follows the ray-serve branch; pin a sha-<commit> tag once it is stable.
+          image: ghcr.io/helmholtzai-consultants-munich/vhmodels-mole:ray-serve
+          imagePullPolicy: Always
+          command:
+            - ray
+            - start
+            - --address=vhmodels-head:6379
+            - --num-cpus=2
+            - --num-gpus=0
+            - --object-store-memory=536870912
+            - --labels=vhmodels/project=mole
+            - --block
+          env:
+            - name: VHMODELS_IMAGE_NODES
+              value: "1"
+            - name: HF_HOME
+              value: /cache/huggingface
+            # Ray otherwise gives each actor one thread (its default num_cpus).
+            - name: OMP_NUM_THREADS
+              value: "2"
+          resources:
+            requests: {cpu: "2", memory: 6Gi}
+            limits: {cpu: "2", memory: 6Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: dshm, mountPath: /dev/shm}
+            - {name: cache, mountPath: /cache}
+      volumes:
+        - name: dshm
+          # Must exceed --object-store-memory; counts against the memory limit.
+          emptyDir: {medium: Memory, sizeLimit: 768Mi}
+  volumeClaimTemplates:
+    - metadata:
+        name: cache
+        labels:
+          app.kubernetes.io/part-of: vhmodels-inference
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ssd
+        # MolE's sources are 777MB.
+        resources: {requests: {storage: 5Gi}}

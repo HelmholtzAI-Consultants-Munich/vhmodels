@@ -1,28 +1,37 @@
 # vhmodels on Kubernetes (PoC)
 
 Ray on the Helmholtz Kubernetes cluster, namespace `chc`, **without KubeRay**:
-the Ray head and workers are plain Deployments. The models run on **CPU**,
-and H-Optimus-0 also on the namespace's one GPU.
+the Ray head and workers are plain Deployments.
+
+Models run on Ray workers started from their **OCI images on GHCR**, with the
+vhmodels package exactly as the image ships it, so they use the same model
+definitions as on Slurm: see [vhmodels from the GHCR images](#vhmodels-from-the-ghcr-images).
+MolE is the first. The [legacy PoC](#legacy-poc-own-actor-code-per-model)
+instead ran its own actor code per model and installed the dependencies at
+start-up.
 
 ## Layout
 
 ```
 k8s/
 ├── lib.sh                    # shared helpers for the test scripts
-├── service/                  # the inference service: what gets deployed
+├── images/                   # vhmodels from the GHCR images (Ray Core and Serve)
+│   ├── head.yaml             # Ray head: dashboard, Jobs API, Serve controller and proxy
+│   ├── mole.yaml             # MolE worker node (StatefulSet), label vhmodels/project=mole
+│   ├── serve.yaml            # Serve config (ConfigMap), deployed by the head on every start
+│   └── run.sh                # end-to-end test
+├── service/                  # legacy PoC: the inference service
 │   ├── ray-head.yaml         # Ray head (dashboard, Jobs API, Ray Client)
 │   ├── api.yaml              # HTTP API, POST /embed/<model>
 │   └── models/
 │       ├── hoptimus0/        # deploy.py (--gpu), ray-worker.yaml, ray-worker-gpu.yaml
 │       └── prottrans/        # deploy.py, ray-worker.yaml
-└── tests/                    # each run.sh deploys the parts of service/ it needs
+└── tests/                    # legacy PoC: each run.sh deploys the parts of service/ it needs
 ```
-
-There is one service, and the tests deploy different parts of it; they do not
-build on each other, and each runs on its own.
 
 | Test | What it checks |
 | --- | --- |
+| [images/run.sh](images/run.sh) | MolE from its GHCR image: one Ray Core prediction and one Ray Serve HTTP prediction |
 | [tests/smoke/](tests/smoke/) | Ray head + placeholder API, job submission via port-forward |
 | [tests/hf-access/](tests/hf-access/) | A pod reaches Hugging Face over HTTPS with the token |
 | [tests/hoptimus0/](tests/hoptimus0/) | H-Optimus-0 embeddings: API → Ray → model |
@@ -36,7 +45,120 @@ test next to a kept service leaves that service intact. The scripts
 port-forward to free local ports, so tunnels you have open on 8265 or 8000 are
 not affected.
 
-## Architecture (H-Optimus-0 on CPU)
+## vhmodels from the GHCR images
+
+Every pod runs a model image,
+`ghcr.io/helmholtzai-consultants-munich/vhmodels-<model id>:ray-serve`, built
+by `.github/workflows/images.yaml`. It holds the model's dependencies,
+`ray[serve]` and the vhmodels package, so every node runs the same Python and
+the same vhmodels code.
+
+```
+Your Mac                          Namespace chc
+────────                          ────────────────────────────────────────────────────
+
+ray job submit ── port-forward ──►┌─────────────────────────────────────────────────┐
+  examples/mole.py      8265      │ vhmodels-head (vhmodels-mole:ray-serve image)   │
+                                  │ job drivers, Serve controller and HTTP proxy    │
+curl /mole/predict ─ port-fwd ───►│ serve deploy serve.yaml on every start          │
+                                  │ no model: --num-cpus=0, no label                │
+                        8000      └────────────────────────┬────────────────────────┘
+                                                           │ label_selector
+                                                           ▼ vhmodels/project=mole
+                                  ┌─────────────────────────────────────────────────┐
+                                  │ vhmodels-mole-0 (vhmodels-mole:ray-serve image) │
+                                  │ ray start --labels=vhmodels/project=mole        │
+                                  │ ModelActor / Serve replica in /opt/venv:        │
+                                  │ downloads the sources, load_model(), predict()  │
+                                  │ volume cache-vhmodels-mole-0 (ssd) at /cache    │
+                                  └────────────────────────┬────────────────────────┘
+                                                           ▼ HTTPS (first run only)
+                                                    huggingface.co
+```
+
+`VHMODELS_IMAGE_NODES=1`, set on every pod, is the only switch; scripts and
+Serve configs are the same as on Slurm ([docs/ray.md](../docs/ray.md#kubernetes)):
+
+| | Slurm | Kubernetes |
+| --- | --- | --- |
+| Model environment | venv or `.sif` (`VHMODELS_IMAGE_DIR`) | worker pods running the image (`VHMODELS_IMAGE_NODES=1`) |
+| Placement | `runtime_env.py_executable` | `label_selector` `vhmodels/project=<id>` |
+| Sources | the driver downloads them to the shared filesystem | the actor downloads them to its pod's volume |
+| Ray Core inputs | shared filesystem | the job's `working_dir` |
+| Serve inputs | paths on the shared filesystem | paths on the replica's pod |
+
+**Run** ([images/run.sh](images/run.sh)): deploys the head, the MolE worker
+and the Serve config, runs the unchanged `examples/mole.py` as a Ray job,
+waits for `/mole` and POSTs the example table to `/mole/predict`.
+
+**Serve apps survive head restarts.** A restarted head is an empty Ray
+cluster; the workers rejoin by themselves, and the head's `postStart` hook runs
+`serve deploy` on [images/serve.yaml](images/serve.yaml) (a ConfigMap) on every
+start, so the apps come back too. Running Ray jobs are lost.
+
+```bash
+k8s/images/run.sh     # KEEP=1 leaves the cluster and the /mole app running
+```
+
+**Use a kept service:**
+
+```bash
+kubectl -n chc port-forward svc/vhmodels-head 8265:8265 8000:8000 &
+.venv/bin/ray job submit --address http://localhost:8265 --working-dir <dir> -- python <script>.py
+kubectl -n chc cp example_data/MolE/examples_molecules.tsv vhmodels-mole-0:/cache/in.tsv
+curl -H 'Content-Type: application/json' -d '{"input": "/cache/in.tsv"}' localhost:8000/mole/predict
+curl localhost:8000/mole/info
+
+# change the Serve config: apply, wait until the mounted copy updates (up to a minute), deploy
+kubectl apply -f k8s/images/serve.yaml
+kubectl -n chc exec deploy/vhmodels-head -- serve deploy /etc/vhmodels/serve.yaml
+```
+
+**Cost per pod and request:**
+
+- **Requests** run on a loaded model: each actor or replica loads it once.
+  Replicas take one request at a time, so throughput grows with replicas.
+  `OMP_NUM_THREADS` is set to the pod's CPUs; Ray would otherwise give each
+  actor one thread.
+- **Cold start** of a pod: the image pull (about 5 min, once per node), the
+  sources download (MolE 777MB, once per volume) and the model load.
+- **Storage:** each worker pod of the StatefulSet has its own persistent
+  volume (`ssd`, Ceph, one node at a time; 600Gi in the namespace), so the
+  sources survive pod restarts and image updates. Deleting the StatefulSet
+  keeps the volume: `kubectl -n chc delete pvc cache-vhmodels-mole-0`.
+- **Images** carry two tags: `sha-<commit>`, fixed, and the branch name
+  (`ray-serve`), which moves with every push. The manifests follow the branch
+  tag with `imagePullPolicy: Always`; pin a `sha-` tag once it is stable.
+
+**Add a model:** copy `images/mole.yaml` with the model's image, name, label,
+resources and volume size, and add its app to a Serve config. The head can
+stay on the MolE image: all images carry the same vhmodels code. GPU workers
+request `nvidia.com/gpu: 1` and `--num-gpus=1`; a pod on the GPU node can use
+about 14 CPUs and 56Gi.
+
+### Moving to KubeRay
+
+KubeRay is not installed in the cluster yet. When it is, these parts change;
+everything else, the vhmodels package included, stays as it is.
+
+| Now (plain Kubernetes) | With KubeRay |
+| --- | --- |
+| `head.yaml`: Deployment and Service, `ray start --head` | RayService `headGroupSpec`; the operator starts Ray and creates the head and Serve Services |
+| `mole.yaml`: one StatefulSet per model, `ray start --labels=vhmodels/project=mole` | one `workerGroupSpecs` entry per model image, the same label in `rayStartParams` |
+| `serve.yaml` ConfigMap, deployed by the head's `postStart` hook | `serveConfigV2` in the RayService; the operator deploys it, redeploys it after failures and upgrades without downtime |
+| Fixed worker replicas | Autoscaling per worker group between `minReplicas` and `maxReplicas`, possibly to zero |
+| Persistent volume per worker pod (StatefulSet) | Per-pod ephemeral volume, downloaded again for each new pod, unless shared storage exists |
+| A head restart loses the cluster state; apps come back through the hook | The same, or none lost with GCS fault tolerance (external Redis) |
+| `ray job submit` through a port-forward | The same, or a RayJob per job |
+| Head runs the MolE image | Unchanged: KubeRay brings no image |
+| `kubectl port-forward` for access | Unchanged: an Ingress needs DNS either way |
+
+## Legacy PoC: own actor code per model
+
+These parts predate the model images: each `deploy.py` defines its own actor
+and installs torch and the model's packages when the worker starts.
+
+### Architecture (H-Optimus-0 on CPU)
 
 ```
 Your Mac                               Namespace chc
@@ -69,6 +191,8 @@ curl /embed ──── port-forward 8000 ───►│ API pod     │      
 | Pod | Image | CPU | Memory | Runs |
 | --- | --- | --- | --- | --- |
 | `vhmodels-ray-head` | `rayproject/ray:2.59.0-py311` | 2 | 4Gi | Ray coordinator, dashboard, job API, job drivers |
+| `vhmodels-head` | `ghcr.io/helmholtzai-consultants-munich/vhmodels-mole:ray-serve` | 1-2 | 4Gi | Ray head of `images/`: job drivers, Serve controller and proxy |
+| `vhmodels-mole-0` | same | 2 | 6Gi + 5Gi volume | MolE actor and Serve replica (CPU) |
 | `vhmodels-ray-worker` | same | 2 | 8Gi | H-Optimus-0 actor (CPU, fp32) |
 | `vhmodels-ray-worker-prottrans` | same | 2 | 8Gi | ProtT5-XL-UniRef50 encoder actor (CPU, fp32) |
 | `vhmodels-ray-worker-gpu` | `rayproject/ray:2.59.0-py311-cu126` | 2 + 1 GPU | 8Gi | H-Optimus-0 actor `hoptimus0-gpu` (CUDA, fp16 autocast) |
@@ -92,6 +216,8 @@ curl /embed ──── port-forward 8000 ───►│ API pod     │      
 | --- | --- | --- |
 | HF token | Secret `hf-hopt0-token` in `chc` | **Permanent**, until deleted |
 | Manifests, scripts | this repo (`k8s/`) | git |
+| Model images (GHCR) | container image cache of each node | Until the node evicts them |
+| MolE sources, Serve inputs | volume `cache-vhmodels-mole-0` (`ssd`) at `/cache` | **Permanent**, until the PVC is deleted |
 | Pods, Services, ConfigMaps | `chc` | Until the script deletes them |
 | CPU torch, timm (pip) | worker container, `/tmp/ray` | Gone with the pod |
 | Model checkpoint | worker `emptyDir` `/cache/huggingface` | Gone with the pod |
@@ -195,6 +321,9 @@ kubectl -n chc delete -R -f k8s/service -f k8s/tests/smoke/api.yaml --ignore-not
 
 ## Next steps
 
-- Custom image with the model dependencies, pushed to a registry.
-- Persistent volume for the HF cache.
-- Ingress with HTTPS for the API.
+1. **Inputs over HTTP.** Serve takes file paths, which must exist on the
+   replica's pod; MolE's table is copied there first.
+2. **Model-free head image** with vhmodels and `ray[serve]`, instead of the
+   MolE image.
+3. More models, then GPU workers on the GPU node.
+4. Ingress with HTTPS for the Serve proxy.

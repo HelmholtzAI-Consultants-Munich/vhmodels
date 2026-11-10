@@ -34,8 +34,9 @@ the variant id looked up here — DinoBloom's `"s"/"b"/"l"/"g"`, ProtTrans's
 Defined with Pydantic in `vhmodels/models/schema.py`:
 
 - `ModelManifest` — validates `model.json`: `schema_version`, `model` (id,
-  version, description, homepage), `implementation.class_path`, `runtimes`
-  (conda/apptainer), `supported_platforms`, and default `sources`.
+  version, description, homepage), `implementation` (`class_path`,
+  `capabilities`, `input`), `runtimes` (conda/uv/apptainer),
+  `supported_platforms`, and default `sources`.
 - `VariantManifest` — validates `manifests/<variant>.json`: `variant`, an
   optional `description` override, and `sources` overrides.
 - `ResolvedManifest` — the merged, fully validated result of resolving one
@@ -45,6 +46,22 @@ Defined with Pydantic in `vhmodels/models/schema.py`:
 All three reject unknown fields (`extra="forbid"`), so a typo or a leftover
 field from the old flat `config.json` fails loudly at load time instead of
 being silently ignored.
+
+### Input
+
+`implementation.input` declares the shape of `input` for `embed` and
+`predict`. `load_model` (every runtime) and Ray Serve check it before the
+model runs and raise `ValueError` (HTTP 422) on a mismatch. Values are
+still checked by the model (valid SMILES, image size, TSV columns).
+
+| `type` | Accepts | Models |
+| --- | --- | --- |
+| `sequences` | `list[str]` | Hyformer, ProtTrans |
+| `file` | `str` path | MolE |
+| `images` | `str` image or folder path, or `list[str]` of paths | DinoBloom, HOptimus0 |
+| `named_files` | `dict` of `str` paths with exactly the names in `keys` | Nicheformer (`["technology_mean", "data"]`) |
+
+Without `input`, nothing is checked.
 
 ### Sources
 

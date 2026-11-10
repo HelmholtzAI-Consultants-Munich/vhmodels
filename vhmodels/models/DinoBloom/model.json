@@ -8,7 +8,8 @@
   },
   "implementation": {
     "class_path": "DinoBloom.model.DinoBloom",
-    "capabilities": ["embed"]
+    "capabilities": ["embed"],
+    "input": { "type": "images" }
   },
   "supported_platforms": ["linux-x86_64", "macos-arm64"],
   "runtimes": {

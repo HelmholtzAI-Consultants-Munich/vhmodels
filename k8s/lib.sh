@@ -59,6 +59,24 @@ stop_port_forwards() {
     done
 }
 
+# wait_for_node_label DASHBOARD KEY=VALUE: waits until an alive Ray node has the
+# label, e.g. a model's image worker (k8s/service/workers), so that a job does
+# not wait forever on an actor whose node never joined.
+wait_for_node_label() {
+    local i
+    for i in $(seq 60); do
+        if "$RAY" list nodes --address "$1" --filter state=ALIVE --format json 2>/dev/null \
+            | python3 -c 'import json, sys
+key, value = sys.argv[1].split("=", 1)
+sys.exit(not any(node["labels"].get(key) == value for node in json.load(sys.stdin)))' "$2"; then
+            return 0
+        fi
+        sleep 5
+    done
+    echo "no alive Ray node with label $2 after 5 min; check the worker's logs" >&2
+    return 1
+}
+
 # port_forward SERVICE PORT: forwards the service port to a free local port and
 # sets LOCAL_PORT, so a tunnel the user already has open is never reused.
 port_forward() {

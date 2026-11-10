@@ -138,9 +138,50 @@ class ModelIdentity(_Strict):
     homepage: Optional[str] = None
 
 
+class ModelInput(_Strict):
+    """Shape of the ``input`` that ``embed`` and ``predict`` take.
+
+    - ``sequences``: list of strings (SMILES, amino-acid sequences)
+    - ``file``: one path
+    - ``images``: an image path, a folder path or a list of image paths
+    - ``named_files``: dict of paths with exactly the names in ``keys``
+    """
+
+    type: Literal["sequences", "file", "images", "named_files"]
+    keys: Optional[List[str]] = None
+
+    @model_validator(mode="after")
+    def _keys_only_for_named_files(self):
+        if (self.type == "named_files") != bool(self.keys):
+            raise ValueError("input.keys is required for, and only for, named_files")
+        return self
+
+    def check(self, input):
+        """Raise ``ValueError`` if ``input`` does not have this shape."""
+        is_strings = isinstance(input, list) and all(isinstance(i, str) for i in input)
+        if self.type == "sequences":
+            valid, expected = is_strings, "a list of strings"
+        elif self.type == "file":
+            valid, expected = isinstance(input, str), "a file path"
+        elif self.type == "images":
+            valid = isinstance(input, str) or is_strings
+            expected = "an image or folder path, or a list of image paths"
+        else:
+            valid = (
+                isinstance(input, dict)
+                and set(input) == set(self.keys)
+                and all(isinstance(path, str) for path in input.values())
+            )
+            expected = f"a dict of paths with keys {self.keys}"
+        if not valid:
+            raise ValueError(f"Expected input: {expected}; got {input!r:.100}.")
+
+
 class Implementation(_Strict):
     class_path: str
     capabilities: List[str] = Field(default_factory=lambda: ["embed"])
+    # Optional so that manifests without it skip the input check.
+    input: Optional[ModelInput] = None
 
 
 # --- model.json -----------------------------------------------------------------

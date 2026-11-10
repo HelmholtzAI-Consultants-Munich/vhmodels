@@ -1,0 +1,26 @@
+# The Ray Serve config, in the format of examples/ray/serve.yaml. The head
+# deploys it on every start (head.yaml), so the apps come back after a head
+# restart. With VHMODELS_IMAGE_NODES=1, build_app places each app's replicas on
+# its model's image nodes.
+#
+# To change it: `kubectl apply -f` this file, wait until the head's mounted copy
+# is updated (up to a minute), then
+#   kubectl -n chc exec deploy/vhmodels-head -- serve deploy /etc/vhmodels/serve.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vhmodels-serve
+  labels:
+    app.kubernetes.io/part-of: vhmodels-inference
+data:
+  serve.yaml: |
+    http_options:
+      # Listen on the pod's address so that a Service or Ingress can reach the proxy.
+      host: 0.0.0.0
+    applications:
+      - name: mole
+        route_prefix: /mole
+        import_path: vhmodels.vh_ray.serve.deployment:build_app
+        args:
+          project: mole
+          device: cpu

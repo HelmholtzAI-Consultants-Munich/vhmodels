@@ -35,7 +35,7 @@ Stage: runtime
 
     uv python install --managed-python "cpython-{python_version}-linux-x86_64-gnu"
     uv venv --managed-python --python "cpython-{python_version}-linux-x86_64-gnu" /opt/venv
-    uv pip install --python /opt/venv/bin/python {torch_backend_arg} {exclude_arg} --requirements /opt/vhmodels-src/vhmodels/models/{model_dir}/{requirements_file} ray=={ray_version}
+    uv pip install --python /opt/venv/bin/python {torch_backend_arg} {exclude_arg} --requirements /opt/vhmodels-src/vhmodels/models/{model_dir}/{requirements_file} "ray[serve]=={ray_version}"
     PYTHONPATH=/opt/vhmodels-src /opt/venv/bin/python -c "import vhmodels.models.{model_dir}.model"
 
 %environment

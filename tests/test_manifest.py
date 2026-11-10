@@ -19,7 +19,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from vhmodels.models import discovery
 from vhmodels.models.registry import REGISTRY, Registry
-from vhmodels.models.schema import Runtimes, Source
+from vhmodels.models.schema import ModelInput, Runtimes, Source
 from vhmodels.models.source_resolver import SourceResolver
 from vhmodels.utils.uv_utils import MODEL_PYTHON, RAY_VERSION, model_uv_spec
 
@@ -43,6 +43,35 @@ def test_apptainer_runtime_requires_uv_spec():
         Runtimes.model_validate({"apptainer": {"platform": "linux-x86_64"}})
 
 
+@pytest.mark.parametrize(
+    ("spec", "valid", "invalid"),
+    [
+        ({"type": "sequences"}, ["CCO", "MKTAYIAK"], "CCO"),
+        ({"type": "file"}, "/data/molecules.tsv", ["/data/molecules.tsv"]),
+        ({"type": "images"}, "/data/tiles", 5),
+        ({"type": "images"}, ["/data/a.png", "/data/b.png"], {"a": "/data/a.png"}),
+        (
+            {"type": "named_files", "keys": ["technology_mean", "data"]},
+            {"technology_mean": "/data/mean.npy", "data": "/data/cells.h5ad"},
+            {"data": "/data/cells.h5ad"},
+        ),
+    ],
+)
+def test_model_input_accepts_its_shape_only(spec, valid, invalid):
+    model_input = ModelInput.model_validate(spec)
+    model_input.check(valid)
+    with pytest.raises(ValueError, match="Expected input"):
+        model_input.check(invalid)
+
+
+@pytest.mark.parametrize(
+    "spec", [{"type": "named_files"}, {"type": "file", "keys": ["data"]}]
+)
+def test_model_input_keys_only_for_named_files(spec):
+    with pytest.raises(ValidationError, match="input.keys"):
+        ModelInput.model_validate(spec)
+
+
 @pytest.mark.parametrize("revision", [{}, {"revision": ""}])
 def test_git_source_requires_a_revision(revision):
     with pytest.raises(ValidationError):
@@ -56,7 +85,7 @@ def test_model_python_and_ray_match_the_repository():
     python_version = (root / ".python-version").read_text(encoding="utf-8")
     assert python_version.strip() == MODEL_PYTHON
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
-    assert f'ray = ["ray[default]=={RAY_VERSION}"]' in pyproject
+    assert f'ray = ["ray[default,serve]=={RAY_VERSION}"]' in pyproject
 
 
 # --- dependency boundaries: what model environments may import --------------
@@ -156,6 +185,7 @@ def test_real_model_manifest_is_consistent(project):
     manifest = REGISTRY.get_model(project)
     assert manifest.model_dir
     assert manifest.model.id == project
+    assert manifest.implementation.input is not None
     spec = model_uv_spec(manifest)
     assert spec.requirements_path.is_file()
     assert spec.exclude_path is None or spec.exclude_path.is_file()

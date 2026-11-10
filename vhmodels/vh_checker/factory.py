@@ -31,6 +31,34 @@ def _resolve_resources(project, model):
     return _get_registry().resolve_resources(project, model)
 
 
+def resolve_ray_model(project, model=None, image_path=None):
+    """Check a Ray model's image or venv; return its variant, resources and image."""
+    from vhmodels.vh_ray.envs import check_model_venv, image_dir_path, image_nodes
+
+    if image_nodes():
+        # The model's image nodes share no filesystem with the driver, so the
+        # actor resolves the sources there (resources=None).
+        if image_path is not None:
+            raise ValueError("image_path cannot be used with VHMODELS_IMAGE_NODES=1.")
+        return _get_registry().resolve(project, model).variant, None, None
+
+    image_path = image_path or image_dir_path(project)
+    if image_path is None:
+        check_model_venv(project, _get_registry().get_model(project))
+    else:
+        image_path = Path(image_path).expanduser().resolve()
+        if not image_path.is_file():
+            raise RuntimeError(f"Apptainer image '{image_path}' does not exist.")
+    variant, resources = _resolve_resources(project, model)
+    return variant, resources, image_path
+
+
+def check_input(model_input, input):
+    """Check ``input`` against the manifest's ``implementation.input``, if any."""
+    if model_input is not None:
+        model_input.check(input)
+
+
 def _extract_frame(stdout, stderr):
     """Extract and decode one RESULT_MARKER-framed JSON value."""
 
@@ -80,10 +108,12 @@ class ModelProxy:
         runtime="conda",
         timeout=DEFAULT_TIMEOUT,
         load_kwargs=None,
+        model_input=None,
     ):
         self.project = project
         self.model = model
         self.runtime = runtime
+        self.model_input = model_input
         self.env_name = env_name
         self.timeout = timeout
         self.load_kwargs = load_kwargs or {}
@@ -140,6 +170,7 @@ class ModelProxy:
                 )
 
     def embed(self, input, **kwargs):
+        check_input(self.model_input, input)
         self._ensure_backend_available()
         raw_result = self._process_manager.embed(
             input=input,
@@ -149,6 +180,7 @@ class ModelProxy:
         return _unwrap_model_result(raw_result)
 
     def predict(self, input, embedding=None, **kwargs):
+        check_input(self.model_input, input)
         self._ensure_backend_available()
         raw_result = self._process_manager.predict(
             input=input,
@@ -182,6 +214,7 @@ def load_model(
         raise ValueError(f"Model '{project}' not found.")
 
     manifest = registry.get_model(project)
+    model_input = manifest.implementation.input
     conda_runtime = manifest.runtimes.conda
     env_name = conda_runtime.env_name if conda_runtime else f"vhmodels-{project}"
     if runtime == "apptainer":
@@ -196,16 +229,8 @@ def load_model(
     if runtime == "ray":
         # Ray is an optional extra, so it is only imported for this runtime.
         from vhmodels.vh_ray.client import RayModelProxy
-        from vhmodels.vh_ray.envs import check_model_venv, image_dir_path
 
-        image_path = image_path or image_dir_path(project)
-        if image_path is None:
-            check_model_venv(project, manifest)
-        else:
-            image_path = Path(image_path).expanduser().resolve()
-            if not image_path.is_file():
-                raise RuntimeError(f"Apptainer image '{image_path}' does not exist.")
-        variant, resources = _resolve_resources(project, model)
+        variant, resources, image_path = resolve_ray_model(project, model, image_path)
         return RayModelProxy(
             project=project,
             model=variant,
@@ -213,6 +238,7 @@ def load_model(
             load_kwargs=load_kwargs,
             ray_options=ray_options,
             image_path=image_path,
+            model_input=model_input,
         )
     if ray_options is not None:
         raise ValueError("ray_options can only be used with runtime='ray'.")
@@ -223,4 +249,5 @@ def load_model(
         model=model,
         runtime=runtime,
         load_kwargs=load_kwargs,
+        model_input=model_input,
     )

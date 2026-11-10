@@ -45,7 +45,7 @@ def build_commands(spec, target, versions, model_dir_name=None, repo_root=None):
         install += ["--excludes", str(spec.exclude_path)]
     if spec.requirements_path:
         install += ["--requirements", str(spec.requirements_path)]
-    install.append(f"ray=={versions['ray']}")
+    install.append(f"ray[serve]=={versions['ray']}")
 
     smoke_import = "import ray, vhmodels.vh_ray.actor"
     if model_dir_name:
@@ -149,6 +149,16 @@ def image_dir_path(project):
     if not root:
         return None
     return Path(root).expanduser().resolve() / f"vhmodels-{project}.sif"
+
+
+def image_nodes():
+    """Whether each model runs on Ray nodes started from its OCI image (Kubernetes)."""
+    return os.environ.get("VHMODELS_IMAGE_NODES") == "1"
+
+
+def image_node_selector(project):
+    """Return the label_selector of the nodes that run the model's image."""
+    return {"vhmodels/project": project}
 
 
 def model_runtime_env(project):

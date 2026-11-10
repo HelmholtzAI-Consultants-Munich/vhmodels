@@ -1,8 +1,12 @@
-"""Opt-in end-to-end test: PersistentFake in a real uv venv via load_model(runtime="ray")."""
+"""Opt-in end-to-end tests: PersistentFake in a real uv venv via Ray Core and Ray Serve."""
 
+import json
 import os
 from pathlib import Path
 import shutil
+import socket
+import urllib.error
+import urllib.request
 
 import pytest
 
@@ -58,16 +62,27 @@ def ray_cluster(tmp_path_factory):
         os.chdir(previous_cwd)
 
 
-def test_ray_actor_runs_in_model_venv(
-    staged_checkout, ray_cluster, monkeypatch, tmp_path
-):
+@pytest.fixture(scope="module")
+def model_venv(staged_checkout, tmp_path_factory):
+    """Build PersistentFake's venv once and resolve the model from the staged copy."""
     from vhmodels.vh_ray import envs
 
     registry = Registry(models_dir=staged_checkout / "vhmodels" / "models")
-    monkeypatch.setenv("VHMODELS_VENV_DIR", str(tmp_path / "venvs"))
-    monkeypatch.setattr(envs, "REPO_ROOT", staged_checkout)
-    monkeypatch.setattr(factory, "_registry", registry)
-    venv = envs.build_model_venv(_PROJECT, registry.get_model(_PROJECT))
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("VHMODELS_VENV_DIR", str(tmp_path_factory.mktemp("venvs")))
+        patch.setattr(envs, "REPO_ROOT", staged_checkout)
+        patch.setattr(factory, "_registry", registry)
+        yield envs.build_model_venv(_PROJECT, registry.get_model(_PROJECT))
+
+
+def _free_port():
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def test_ray_actor_runs_in_model_venv(model_venv, ray_cluster, monkeypatch, tmp_path):
+    venv = model_venv
     monkeypatch.chdir(tmp_path)
 
     model = factory.load_model(
@@ -105,3 +120,53 @@ def test_ray_actor_runs_in_model_venv(
 
     with pytest.raises(RuntimeError, match="closed"):
         model.embed("after close")
+
+
+def test_serve_app_runs_in_model_venv(model_venv, ray_cluster):
+    from ray import serve
+
+    from vhmodels.vh_ray.serve.deployment import build_app
+
+    port = _free_port()
+    serve.start(http_options={"host": "127.0.0.1", "port": port})
+    try:
+        app = build_app(
+            {
+                "project": _PROJECT,
+                "model": "tiny-variant",
+                "ray_options": {"num_cpus": 0.5},
+                "sentinel": "forwarded-load-kwarg",
+            }
+        )
+        serve.run(app, name=_PROJECT, route_prefix=f"/{_PROJECT}")
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/{_PROJECT}/embed",
+            data=json.dumps({"input": ["over-http"], "batch_size": 2}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            over_http = json.load(response)["output"]
+        # Input of the wrong shape is rejected before the model runs.
+        invalid = urllib.request.Request(
+            f"http://127.0.0.1:{port}/{_PROJECT}/embed",
+            data=json.dumps({"input": 5}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with pytest.raises(urllib.error.HTTPError) as rejected:
+            urllib.request.urlopen(invalid, timeout=60)
+        handle = serve.get_app_handle(_PROJECT)
+        info = handle.info.remote().result()
+        over_handle = handle.embed.remote(["over-handle"]).result()["output"]
+    finally:
+        serve.shutdown()
+
+    assert Path(info["executable"]) == model_venv / "bin" / "python"
+    assert over_http["input"] == ["over-http"]
+    assert over_http["kwargs"] == {"batch_size": 2}
+    assert over_http["load_kwargs"] == {"sentinel": "forwarded-load-kwarg"}
+    assert rejected.value.code == 422
+    assert over_handle["input"] == ["over-handle"]
+    # HTTP and handle calls reach the same replica and loaded model.
+    assert over_http["pid"] == over_handle["pid"] == info["pid"]
+    assert over_http["load_id"] == over_handle["load_id"]
+    assert [over_http["embed_count"], over_handle["embed_count"]] == [1, 2]

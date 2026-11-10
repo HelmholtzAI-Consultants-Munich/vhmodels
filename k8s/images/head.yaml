@@ -1,0 +1,106 @@
+# Ray head of the vhmodels service: dashboard, Jobs API, Serve controller and
+# HTTP proxy. It runs a model image because that already has everything a job
+# driver needs: vhmodels, ray[serve] and the Python of every model image
+# (MODEL_PYTHON). It hosts no model: --num-cpus=0 and no vhmodels/project label.
+# The ports have no authentication and are only reached via `kubectl
+# port-forward`; the Service is ClusterIP.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vhmodels-head
+  labels: &labels
+    app.kubernetes.io/name: vhmodels-head
+    app.kubernetes.io/part-of: vhmodels-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vhmodels-head
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ray-head
+          # Follows the ray-serve branch; pin a sha-<commit> tag once it is stable.
+          image: ghcr.io/helmholtzai-consultants-munich/vhmodels-mole:ray-serve
+          imagePullPolicy: Always
+          command:
+            - ray
+            - start
+            - --head
+            - --dashboard-host=0.0.0.0
+            - --num-cpus=0
+            - --num-gpus=0
+            - --object-store-memory=536870912
+            - --block
+          # Inherited by job drivers and Serve: scripts use the Ray runtime and
+          # run each model on its image's nodes (mole.yaml).
+          env:
+            - name: VHMODELS_RUNTIME
+              value: ray
+            - name: VHMODELS_IMAGE_NODES
+              value: "1"
+          # Every start of the head deploys the Serve config (serve.yaml), so the
+          # apps come back after a restart. Retries until the dashboard is up;
+          # if it never succeeds, Kubernetes restarts the container and the
+          # pod's events show the output.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - bash
+                  - -c
+                  - |
+                    for _ in $(seq 60); do
+                      serve deploy /etc/vhmodels/serve.yaml && exit 0
+                      sleep 5
+                    done
+                    exit 1
+          ports:
+            - {name: gcs, containerPort: 6379}
+            - {name: dashboard, containerPort: 8265}
+            - {name: client, containerPort: 10001}
+            - {name: serve, containerPort: 8000}
+          readinessProbe:
+            httpGet: {path: /api/gcs_healthz, port: dashboard}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests: {cpu: "1", memory: 4Gi}
+            limits: {cpu: "2", memory: 4Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: dshm, mountPath: /dev/shm}
+            - {name: serve-config, mountPath: /etc/vhmodels, readOnly: true}
+      volumes:
+        - name: serve-config
+          configMap: {name: vhmodels-serve}
+        - name: dshm
+          # Must exceed --object-store-memory; counts against the memory limit.
+          emptyDir: {medium: Memory, sizeLimit: 768Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vhmodels-head
+  labels:
+    app.kubernetes.io/part-of: vhmodels-inference
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: vhmodels-head
+  ports:
+    - {name: gcs, port: 6379, targetPort: gcs}
+    - {name: dashboard, port: 8265, targetPort: dashboard}
+    - {name: client, port: 10001, targetPort: client}
+    - {name: serve, port: 8000, targetPort: serve}

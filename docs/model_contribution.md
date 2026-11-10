@@ -63,7 +63,8 @@ Create a new folder for your model in `vhmodels/models`. The folder needs to con
         "homepage": "link to Hugging Face repository"
     },
     "implementation": {
-        "class_path": "<Your_model>.model.<Your_model>"
+        "class_path": "<Your_model>.model.<Your_model>",
+        "input": { "type": "sequences" }
     },
     "supported_platforms": ["linux-x86_64"],
     "runtimes": {
@@ -91,6 +92,11 @@ Create a new folder for your model in `vhmodels/models`. The folder needs to con
 `supported_platforms` must include `linux-x86_64` for Apptainer. Add
 `macos-arm64` and a matching platform entry under `runtimes.conda.platforms`
 only when you also provide `environment.macos-arm64.yml`.
+
+`implementation.input` declares what `embed`/`predict` take: `sequences`,
+`file`, `images` or `named_files` with `keys` (see
+[docs/manifest.md](manifest.md#input)). Calls with another shape are rejected
+before your model runs.
 
 `runtimes.uv` is the dependency spec for both the Apptainer image and the Ray
 venv, and `runtimes.apptainer` requires it. `requirements` is required;
