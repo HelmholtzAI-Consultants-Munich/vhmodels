@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - ray
+      - ray-serve
     paths:
       - "vhmodels/**"
       - ".dockerignore"
@@ -58,7 +59,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           MODELS: ${{ inputs.models }}
-          ONLY_MODELS: ${{ github.ref_name == 'ray' && 'mole' || '' }}
+          ONLY_MODELS: ${{ startsWith(github.ref_name, 'ray') && 'mole' || '' }}
         run: |
           # Image specs: all models, the requested ones, or the changed ones
           if [[ "${EVENT}" == workflow_dispatch ]]; then
@@ -163,8 +164,9 @@ jobs:
           ray_version="$(sed -n 's/^RAY_VERSION=//p' <<< "${BUILD_ARGS}")"
           docker run --rm --user "$(id -u):$(id -g)" "${TEST_IMAGE}" \
             /opt/venv/bin/python -c "
-          import ray, torch
+          import ray, ray.serve, torch
           import vhmodels.models.${MODEL_DIR}.model
+          import vhmodels.vh_ray.serve.deployment
           assert ray.__version__ == '${ray_version}', ray.__version__
           assert torch.version.cuda, 'torch has no CUDA build'
           print('ray', ray.__version__, 'torch', torch.__version__, 'cuda', torch.version.cuda)

@@ -35,7 +35,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && uv pip install --python /opt/venv/bin/python --compile-bytecode \
         ${TORCH_BACKEND:+--torch-backend "$TORCH_BACKEND"} \
         ${EXCLUDE_FILE:+--excludes "/opt/requirements/$EXCLUDE_FILE"} \
-        --requirements "/opt/requirements/$REQUIREMENTS_FILE" "ray==$RAY_VERSION"
+        --requirements "/opt/requirements/$REQUIREMENTS_FILE" "ray[serve]==$RAY_VERSION"
 
 # vhmodels source
 COPY vhmodels /opt/vhmodels-src/vhmodels

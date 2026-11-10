@@ -6,7 +6,7 @@ Every model has an OCI image on GHCR, built from [`vhmodels/envs/Dockerfile`](..
 
 | Path | Content |
 | --- | --- |
-| `/opt/venv` | Python `MODEL_PYTHON`, the model's `runtimes.uv` requirements and `ray==RAY_VERSION` (`vhmodels/utils/uv_utils.py`) |
+| `/opt/venv` | Python `MODEL_PYTHON`, the model's `runtimes.uv` requirements and `ray[serve]==RAY_VERSION` (`vhmodels/utils/uv_utils.py`) |
 | `/opt/vhmodels-src` | The vhmodels package (`PYTHONPATH`) |
 
 - Image: `ghcr.io/helmholtzai-consultants-munich/vhmodels-<model id>`
@@ -17,12 +17,12 @@ Every model has an OCI image on GHCR, built from [`vhmodels/envs/Dockerfile`](..
 | Trigger | Models | Pushed tags |
 | --- | --- | --- |
 | Pull request | changed | none (build and smoke test only) |
-| Push to `ray` | changed, limited to `mole` | `sha-<short sha>`, `ray` |
+| Push to `ray`, `ray-serve` | changed, limited to `mole` | `sha-<short sha>`, branch name |
 | Push to `main` | changed | `sha-<short sha>`, `<model version>-ray<Ray version>`, `latest` |
 | Manual (`workflow_dispatch`) | listed, or all | as for the branch it runs on |
 
 - **Changed models.** A change under `vhmodels/models/<Model>/` rebuilds only that model. Any other change under `vhmodels/`, `.dockerignore` or the workflow rebuilds all of them.
-- **Smoke test** (no GPU on GitHub runners): as a non-root user, import the model module, check the Ray version, and check that torch is a CUDA build. Tags are pushed only if it passes.
+- **Smoke test** (no GPU on GitHub runners): as a non-root user, import the model module and the Ray Serve deployment, check the Ray version, and check that torch is a CUDA build. Tags are pushed only if it passes.
 - **Layer cache:** `<image>:buildcache` on GHCR.
 - **GPU inference** is not tested in CI. Check it on Slurm with a pulled image.
 
