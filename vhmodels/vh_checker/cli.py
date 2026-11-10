@@ -180,6 +180,63 @@ def create_env(project):
         )
 
 
+def _image_build_args(project, manifest):
+    """Return the image build arguments of a model after checking its uv spec."""
+    uv_spec = model_uv_spec(manifest)
+    requirements_path = uv_spec.requirements_path
+    exclude_path = uv_spec.exclude_path
+
+    if manifest.runtimes.apptainer is None or requirements_path is None:
+        raise click.ClickException(
+            f"Apptainer dependency configuration is missing for project '{project}'."
+        )
+    if not requirements_path.is_file():
+        raise click.ClickException(
+            f"Apptainer requirements file not found at {requirements_path}"
+        )
+    if exclude_path is not None and not exclude_path.is_file():
+        raise click.ClickException(
+            f"Apptainer exclude file not found at {exclude_path}"
+        )
+
+    return {
+        "MODEL_DIR": Path(manifest.model_dir).name,
+        "REQUIREMENTS_FILE": requirements_path.name,
+        "EXCLUDE_FILE": exclude_path.name if exclude_path else "",
+        "TORCH_BACKEND": uv_spec.torch_backend or "",
+        "PYTHON_VERSION": MODEL_PYTHON,
+        "RAY_VERSION": RAY_VERSION,
+    }
+
+
+@main.command()
+@click.argument("projects", nargs=-1)
+def image_spec(projects):
+    """Print the OCI image name, tag and build args of models as JSON."""
+    models = REGISTRY.list_models()
+    for project in projects:
+        if project not in models:
+            raise click.ClickException(f"Model '{project}' is not registered.")
+    if not projects:
+        projects = [
+            name for name, manifest in models.items() if manifest.runtimes.apptainer
+        ]
+
+    specs = []
+    for project in projects:
+        manifest = models[project]
+        specs.append(
+            {
+                "id": project,
+                "model_dir": Path(manifest.model_dir).name,
+                "image": f"vhmodels-{project}",
+                "tag": f"{manifest.model.version}-ray{RAY_VERSION}",
+                "build_args": _image_build_args(project, manifest),
+            }
+        )
+    click.echo(json.dumps(specs, indent=2))
+
+
 @main.command()
 @click.argument("project")
 @click.option(
@@ -212,28 +269,12 @@ def create_apptainer_image(project, output):
 
     package_dir = Path(__file__).resolve().parent.parent
     template_path = package_dir / "envs" / "Apptainer"
-    target_dir = Path(manifest.model_dir)
-    uv_spec = model_uv_spec(manifest)
-    requirements_path = uv_spec.requirements_path
-    exclude_path = uv_spec.exclude_path
-    torch_backend = uv_spec.torch_backend
 
     if not template_path.is_file():
         raise click.ClickException(
             f"Apptainer definition template not found at {template_path}"
         )
-    if manifest.runtimes.apptainer is None or requirements_path is None:
-        raise click.ClickException(
-            f"Apptainer dependency configuration is missing for project '{project}'."
-        )
-    if not requirements_path.is_file():
-        raise click.ClickException(
-            f"Apptainer requirements file not found at {requirements_path}"
-        )
-    if exclude_path is not None and not exclude_path.is_file():
-        raise click.ClickException(
-            f"Apptainer exclude file not found at {exclude_path}"
-        )
+    build_args = _image_build_args(project, manifest)
 
     image_path = Path(output or f"vhmodels-{project}.sif").expanduser().resolve()
     if image_path.exists():
@@ -278,18 +319,21 @@ def create_apptainer_image(project, output):
     click.echo(f"Using uv build cache '{uv_cache_path}'.")
 
     definition = template_path.read_text(encoding="utf-8")
+    model_dir = build_args["MODEL_DIR"]
+    torch_backend = build_args["TORCH_BACKEND"]
+    exclude_file = build_args["EXCLUDE_FILE"]
     replacements = {
         "{project}": project,
-        "{model_dir}": target_dir.name,
-        "{python_version}": MODEL_PYTHON,
-        "{ray_version}": RAY_VERSION,
-        "{requirements_file}": requirements_path.name,
+        "{model_dir}": model_dir,
+        "{python_version}": build_args["PYTHON_VERSION"],
+        "{ray_version}": build_args["RAY_VERSION"],
+        "{requirements_file}": build_args["REQUIREMENTS_FILE"],
         "{torch_backend_arg}": (
             f"--torch-backend {torch_backend}" if torch_backend else ""
         ),
         "{exclude_arg}": (
-            f"--excludes /opt/vhmodels-src/vhmodels/models/{target_dir.name}/{exclude_path.name}"
-            if exclude_path
+            f"--excludes /opt/vhmodels-src/vhmodels/models/{model_dir}/{exclude_file}"
+            if exclude_file
             else ""
         ),
     }

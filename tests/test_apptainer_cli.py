@@ -1,3 +1,4 @@
+import json
 import subprocess
 from pathlib import Path
 
@@ -304,3 +305,32 @@ def test_run_cli_forwards_options_and_reports_model_errors(monkeypatch, tmp_path
 
     assert result.exit_code == 1
     assert "Error: The Apptainer image does not exist." in result.output
+
+
+def test_image_spec_lists_oci_build_args():
+    result = CliRunner().invoke(cli.main, ["image-spec", "hyformer", "prottrans"])
+
+    assert result.exit_code == 0
+    specs = json.loads(result.output)
+    assert [spec["image"] for spec in specs] == [
+        "vhmodels-hyformer",
+        "vhmodels-prottrans",
+    ]
+    assert specs[0]["tag"] == "1.0.0-ray2.59.0"
+    assert specs[0]["build_args"] == {
+        "MODEL_DIR": "Hyformer",
+        "REQUIREMENTS_FILE": "requirements.linux-x86_64.txt",
+        "EXCLUDE_FILE": "requirements-exclude.linux-x86_64.txt",
+        "TORCH_BACKEND": "cu118",
+        "PYTHON_VERSION": "3.11.15",
+        "RAY_VERSION": "2.59.0",
+    }
+    assert specs[1]["build_args"]["EXCLUDE_FILE"] == ""
+    assert specs[1]["build_args"]["TORCH_BACKEND"] == ""
+
+
+def test_image_spec_rejects_unknown_model():
+    result = CliRunner().invoke(cli.main, ["image-spec", "unknown"])
+
+    assert result.exit_code == 1
+    assert "Model 'unknown' is not registered." in result.output

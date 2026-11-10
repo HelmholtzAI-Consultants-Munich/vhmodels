@@ -64,7 +64,7 @@ The actor runs in the model's Apptainer image instead of its venv when an image 
 | Source | Image |
 | --- | --- |
 | `load_model(..., image_path=...)` | that file |
-| `VHMODELS_IMAGE_DIR` | `<dir>/vhmodels-<project>.sif`; must exist |
+| `VHMODELS_IMAGE_DIR` | `<dir>/vhmodels-<project>.sif`; must exist; pulled from GHCR ([images.md](images.md)) or built locally |
 | neither | the venv under `VHMODELS_VENV_DIR` |
 
 - **Launch.** `py_executable` is `apptainer exec [--nv] <image> /opt/venv/bin/python`; `--nv` when the actor requests a GPU. Imports come from the image's squashfs, not the network filesystem.
@@ -192,4 +192,4 @@ On the HPC Lustre, importing Hyformer's tokenizer stack (`deepchem`) takes about
 
 1. **Multi-node Slurm.** Let GPU jobs join the cluster as workers (`ray start --address=<head> --block`), with the head on a CPU node, and add GPU-type resources. Every Ray port must then be in 60001–64000.
 2. **Ray as default.** Make Ray the default runtime and retire Conda and Apptainer.
-3. **Kubernetes (KubeRay).** Bake the driver env and the model venvs into one image at a fixed `VHMODELS_VENV_DIR`. The `py_executable` mechanism stays the same.
+3. **Kubernetes (KubeRay).** Run actors in the per-model OCI images from GHCR ([images.md](images.md)).

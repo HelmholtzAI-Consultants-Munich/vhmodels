@@ -23,6 +23,7 @@ config per model, and fill in absolute paths available on the compute nodes.
 | `HF_CACHE_DIR` | Hugging Face model cache; weights go to `<HF_CACHE_DIR>/hub`, while the login token stays in `~/.cache/huggingface` |
 | `TORCH_CACHE_DIR` | PyTorch model cache |
 | `MODEL` | Registered model ID |
+| `IMAGE_TAG` | GHCR image tag for `pull_image.sbatch`; defaults to `latest` |
 | `INFERENCE_SCRIPT` | Python script to run for inference |
 | `DATA_DIR` | Optional data directory passed to the inference script and mounted into Apptainer |
 | `OUTPUT_DIR` | Optional result directory; defaults to `output/` beside the config file |
@@ -32,6 +33,7 @@ Apptainer. `APPTAINER_CACHEDIR` stays on the host and is used by Apptainer
 itself. These are separate caches with separate contents.
 
 - `build_apptainer.sbatch` builds the image for the configured model.
+- `pull_image.sbatch` converts the configured model's OCI image from GHCR into `IMAGE_DIR` as `.sif`, for the Apptainer and Ray runtimes ([docs/images.md](../docs/images.md)).
 - `run_inference.sbatch` runs CPU inference.
 - `run_inference_gpu.sbatch` runs inference on one NVIDIA GPU.
 - `convert_safetensors.sbatch` runs Hugging Face's official converter on a CPU node and opens a conversion PR.
@@ -66,7 +68,7 @@ sbatch "${HPC_SCRIPTS}/run_inference_gpu.sbatch" "${CONFIG}"
 
 - Set `VHMODELS_PYTHON` to the Python 3.11 driver env with `vhmodels[cli,ray]`.
 - `ray_cluster.sbatch` uses `IMAGE_DIR`, `HF_CACHE_DIR`, `TORCH_CACHE_DIR`, `DATA_DIR`, `OUTPUT_DIR` and `VENV_DIR`; `MODEL` and `INFERENCE_SCRIPT` are chosen per job.
-- Actors run in the model images from `build_apptainer.sbatch` (`IMAGE_DIR`), or in venvs if `IMAGE_DIR` is unset.
+- Actors run in the model images in `IMAGE_DIR` (from `pull_image.sbatch` or `build_apptainer.sbatch`), or in venvs if `IMAGE_DIR` is unset.
 - Submitting jobs to the cluster: [docs/ray.md](../docs/ray.md#slurm-cluster).
 
 The conversion job defaults to `virtual-human-chc/prot_t5_xxl_bfd` on `main`. It requires a Hugging Face login that can open a PR on the model repository. To target another model or revision:
