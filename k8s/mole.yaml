@@ -4,8 +4,8 @@
 # through the vhmodels/project=mole node label, and they download the
 # manifest's sources to this pod's volume.
 #
-# A StatefulSet gives each pod its own persistent volume (Ceph `ssd`, one node
-# at a time), so the sources are downloaded once per pod and survive restarts
+# A StatefulSet gives each pod its own persistent volume (storage class `ssd`,
+# one node at a time), so the sources are downloaded once per pod and survive restarts
 # and image updates. Deleting the StatefulSet keeps the volume; delete it with
 # `kubectl -n chc delete pvc cache-vhmodels-mole-0`.
 # Another model is another copy of this file with its image, name, label,

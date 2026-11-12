@@ -6,12 +6,12 @@ This repository contains the vhmodels package. Its goal is to unify access to mu
 
 Each model lives in its own directory with its implementation, metadata, and
 runtime dependencies. `vhmodels` executes it in either a per-model Conda
-environment or an Apptainer container. Apptainer images use Ubuntu 24.04 and a
-uv-managed Python environment at `/opt/venv`.
+environment or an Apptainer container, or as a Ray actor on Slurm or Kubernetes
+(experimental). Every model also has an image on GHCR
+([docs/images.md](docs/images.md)).
 
-Metadata and resource locations are declared in `model.json` +
-`manifests/<variant>.json`, validated against a Pydantic schema and resolved
-by `vhmodels.models.registry.Registry`; see [docs/manifest.md](docs/manifest.md).
+Metadata and resource locations are declared in `model.json` and
+`manifests/<variant>.json` ([docs/manifest.md](docs/manifest.md)).
 
 ## Installation
 
@@ -71,8 +71,10 @@ its GPU to the container. The Lima path on macOS is CPU-only.
 ### Ray runtime (experimental)
 
 `runtime="ray"` runs the model as a Ray actor in its Apptainer image or in a
-per-model uv venv, both built from the model's `runtimes.uv` spec. It needs a
-Python 3.11 driver environment with `vhmodels[ray]` (and uv for venvs):
+per-model uv venv, both built from the model's `runtimes.uv` spec; on
+Kubernetes, in its GHCR image running as a Ray worker pod
+([k8s/README.md](k8s/README.md)). It needs a Python 3.11 driver environment
+with `vhmodels[ray]` (and uv for venvs):
 
 ```bash
 uv venv --managed-python --python 3.11 .venv
@@ -86,7 +88,8 @@ model = vhmodels.load_model(
 )
 ```
 
-See [docs/ray.md](docs/ray.md) for details, Slurm usage and the roadmap.
+See [docs/ray.md](docs/ray.md) for details, Slurm usage and HTTP serving with
+Ray Serve.
 
 ### Model lifetime
 
@@ -110,18 +113,6 @@ with vhmodels.load_model(
     first = model.embed(input="first.bmp")
     second = model.embed(input="second.bmp")  # reuses the loaded model
 ```
-
-Each runtime reaches the model through these classes:
-
-| Role | Conda / Apptainer | Ray |
-| --- | --- | --- |
-| Model implementation | `BaseModel` subclass, `vhmodels/models/<Model>/model.py` | same |
-| Handle returned by `load_model()` | `ModelProxy`, `vhmodels/vh_checker/factory.py` | `RayModelProxy`, `vhmodels/vh_ray/client.py` |
-| Starts, reuses and stops the model process | `ModelProcessManager`, `vhmodels/vh_checker/process_manager.py` | Ray cluster (`ray.init`, `ray.kill`) |
-| Isolated environment | `CondaBackend` / `ApptainerBackend`, `vhmodels/vh_checker/backends.py` | `runtime_env` with the venv or image Python, `vhmodels/vh_ray/envs.py` |
-| Request channel | Unix socket, `vhmodels/vh_checker/transports.py` + `protocol.py` | Ray actor calls (`.remote()`) |
-| Process that holds the model | `ModelWorker`, `vhmodels/vh_checker/worker.py` | `ModelActor`, `vhmodels/vh_ray/actor.py` |
-| HTTP serving | — | `ModelDeployment` (Ray Serve), `vhmodels/vh_ray/serve/deployment.py` |
 
 ## Examples
 
@@ -168,14 +159,16 @@ For more details:
 ```text
 vhmodels
 ├───.claude-plugin              # AI skills plugin metadata
-├───docs                        # Manifest, contribution and Ray docs
+├───.github                     # CI: tests and per-model OCI images
+├───docs                        # Manifest, contribution, Ray and image docs
 ├───example_data                # Example inputs per model
 ├───examples                    # Inference scripts; ray/ for the Ray runtime
 ├───hpc-job-submit              # Slurm scripts and config template
+├───k8s                         # Kubernetes: Ray head, model workers, Serve config
 ├───skills                      # AI agent skills
 ├───tests                       # Unit and integration tests
 └───vhmodels
-    ├───envs                    # Apptainer definition template
+    ├───envs                    # Apptainer template and OCI Dockerfile
     ├───models                  # One folder per model + manifest registry
     │   ├───DinoBloom           # model.json, manifests/, model.py, deps
     │   ├───HOptimus0

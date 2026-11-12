@@ -1,8 +1,7 @@
 """Tests for the manifest schema, Registry, and SourceResolver.
 
-See docs/manifest.md for the design this exercises: model.json +
-manifests/<variant>.json -> Registry.resolve() -> ResolvedManifest ->
-SourceResolver -> local resources.
+The flow under test: model.json + manifests/<variant>.json ->
+Registry.resolve() -> ResolvedManifest -> SourceResolver -> local resources.
 """
 
 import ast

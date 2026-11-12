@@ -98,22 +98,18 @@ only when you also provide `environment.macos-arm64.yml`.
 [docs/manifest.md](manifest.md#input)). Calls with another shape are rejected
 before your model runs.
 
-`runtimes.uv` is the dependency spec for both the Apptainer image and the Ray
-venv, and `runtimes.apptainer` requires it. `requirements` is required;
-`torch_backend` is optional and selects the uv PyTorch backend (for example,
-`cu126`). If a transitive package must be omitted, set `exclude` to a uv
-excludes file in the same model directory. There is no per-model Python
-version: every image and venv uses Python 3.11 (`MODEL_PYTHON` in
-`vhmodels/utils/uv_utils.py`), so the requirements must install on it.
+`runtimes.uv` is the dependency spec for the images and the Ray venv, and
+`runtimes.apptainer` requires it. `requirements` is required; `torch_backend`
+is optional and selects the uv PyTorch backend (for example, `cu126`). If a
+transitive package must be omitted, set `exclude` to a uv excludes file in the
+same model directory. Every image and venv uses Python 3.11, so the
+requirements must install on it.
 
-`sources` describes where your model's resources come from, as one or more
-independently typed entries (`huggingface`, `torch_hub`, `url`, `git`, `local`,
-`python_package` -- see [docs/manifest.md](manifest.md) for the full
-field reference). It is validated by Pydantic and resolved for you at load
-time through `vhmodels.models.registry.REGISTRY` and
-`vhmodels.models.source_resolver.SourceResolver`; `model.py` should read
-already-resolved paths/repo ids from there rather than calling
-`hf_hub_download` or similar directly.
+`sources` lists where your model's resources come from (`huggingface`,
+`torch_hub`, `url`, `git`, `local`, `python_package`; see
+[docs/manifest.md](manifest.md#sources)). vhmodels downloads them before your
+model loads, so `model.py` reads the resolved paths and repo ids instead of
+calling `hf_hub_download` or similar itself.
 
 - `manifests/<variant>.json` (one per variant your model exposes, e.g. the
   value passed as `vhmodels.load_model(project=..., model=<variant>)`)
@@ -151,15 +147,12 @@ Additionally, you can also provide an `environment.macos-arm64.yml` file.
 
 - `requirements.linux-x86_64.txt`
 
-List the Python packages for the Apptainer image and the Ray venv in standard
-pip requirements syntax, installable on Python 3.11. Keep package versions
-consistent with the Conda file.
-The shared definition starts from Ubuntu 24.04, installs these requirements with
-uv, and stores the finished environment at `/opt/venv`. uv is supplied by the
-image build; contributors and users do not need it on the host. If a model needs
-additional Ubuntu packages, add them to `vhmodels/envs/Apptainer`. List only
-what the model itself needs. Manifest validation and downloads run on the host,
-so do not add `pydantic` or other `vhmodels` host dependencies.
+List the Python packages for the images and the Ray venv in standard pip
+requirements syntax, installable on Python 3.11. Keep package versions
+consistent with the Conda file. List only what the model itself needs: no
+`pydantic` or other `vhmodels` dependencies. If the model needs Ubuntu
+packages, add them to both `vhmodels/envs/Apptainer` and
+`vhmodels/envs/Dockerfile`.
 
 - `requirements-exclude.linux-x86_64.txt` (optional)
 

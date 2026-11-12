@@ -1,12 +1,11 @@
 # HPC job submission
 
-These repository examples build an Apptainer image and run a Python inference script on
-an HPC node. You can submit them from any directory. They are not part of the
-installed `vhmodels` package. The build uses model files from that package.
+Slurm scripts that build or pull a model's Apptainer image and run an
+inference script on a compute node. Submit them from any directory.
 
 Install `vhmodels[cli]` in a Python environment visible on compute nodes. The
-configuration, inference script, and its input files must also be visible there. The
-cluster must provide `sbatch`, `jq`, and `/usr/bin/apptainer`.
+config, inference script and input files must be visible there too. The
+cluster must provide `sbatch`, `jq` and `/usr/bin/apptainer`.
 
 ## Configuration
 
@@ -28,33 +27,32 @@ config per model, and fill in absolute paths available on the compute nodes.
 | `DATA_DIR` | Optional data directory passed to the inference script and mounted into Apptainer |
 | `OUTPUT_DIR` | Optional result directory; defaults to `output/` beside the config file |
 
-The build mounts `UV_CACHE_DIR` at `/opt/uv-cache` for uv inside
-Apptainer. `APPTAINER_CACHEDIR` stays on the host and is used by Apptainer
-itself. These are separate caches with separate contents.
+## Scripts
 
 - `build_apptainer.sbatch` builds the image for the configured model.
-- `pull_image.sbatch` converts the configured model's OCI image from GHCR into `IMAGE_DIR` as `.sif`, for the Apptainer and Ray runtimes ([docs/images.md](../docs/images.md)).
+- `pull_image.sbatch` downloads the configured model's image from GHCR into `IMAGE_DIR` as `.sif` ([docs/images.md](../docs/images.md)).
 - `run_inference.sbatch` runs CPU inference.
 - `run_inference_gpu.sbatch` runs inference on one NVIDIA GPU.
-- `convert_safetensors.sbatch` runs Hugging Face's official converter on a CPU node and opens a conversion PR.
 
-The config supplies the inference script, data, and output paths. The
-inference jobs export `VHMODELS_RUNTIME=apptainer`, `VHMODELS_IMAGE_PATH`,
-`VHMODELS_DATA_DIR`, and `VHMODELS_OUTPUT_DIR` (plus `VHMODELS_DEVICE=cuda:0` on
-GPU) for the script. The scripts in [`examples/`](../examples/) read these
-variables, so any of them can be used as `INFERENCE_SCRIPT` with `DATA_DIR`
-pointing at the repository's `example_data/`. Activate the Python
-environment with `vhmodels[cli]` installed before submitting. The jobs use
-`python3` from `PATH`; set `VHMODELS_PYTHON` if a different interpreter is
-needed. Submit from any directory with the sbatch script and the config path:
+The inference jobs set `VHMODELS_RUNTIME=apptainer`, `VHMODELS_IMAGE_PATH`,
+`VHMODELS_DATA_DIR`, `VHMODELS_OUTPUT_DIR` and, on GPU, `VHMODELS_DEVICE=cuda:0`.
+The scripts in [`examples/`](../examples/) read them, so any of them can be
+`INFERENCE_SCRIPT` with `DATA_DIR` pointing at the repository's `example_data/`.
+
+Activate the Python environment with `vhmodels[cli]` before submitting; the
+jobs use `python3` from `PATH`, or `VHMODELS_PYTHON` if set. Build the image
+first, or pull it with `pull_image.sbatch`:
 
 ```bash
 HPC_SCRIPTS=/path/to/vhmodels/hpc-job-submit
 CONFIG=/absolute/path/to/your-config.json
 
 sbatch "${HPC_SCRIPTS}/build_apptainer.sbatch" "${CONFIG}"
+```
 
-# After the build finishes, choose one:
+When it has finished, run inference on CPU or on GPU:
+
+```bash
 sbatch "${HPC_SCRIPTS}/run_inference.sbatch" "${CONFIG}"
 sbatch "${HPC_SCRIPTS}/run_inference_gpu.sbatch" "${CONFIG}"
 ```
@@ -64,19 +62,12 @@ sbatch "${HPC_SCRIPTS}/run_inference_gpu.sbatch" "${CONFIG}"
 | Script | Node | Does |
 | --- | --- | --- |
 | `build_ray_env.sbatch` | CPU | Builds the configured model's uv venv under `VENV_DIR`; needs `uv` in `PATH` |
-| `ray_cluster.sbatch` | 2 GPUs of a supported type (no B300) on a shared GPU node, 30 min | Starts a single-node Ray cluster with Ray Serve, deploys an optional Serve config (2nd argument) and keeps it up until `scancel` or the time limit |
+| `ray_cluster.sbatch` | 2 GPUs on a shared GPU node, 30 min | Starts a single-node Ray cluster with Ray Serve, deploys an optional Serve config (2nd argument) and keeps it up until `scancel` or the time limit |
 
 - Set `VHMODELS_PYTHON` to the Python 3.11 driver env with `vhmodels[cli,ray]`.
 - `ray_cluster.sbatch` uses `IMAGE_DIR`, `HF_CACHE_DIR`, `TORCH_CACHE_DIR`, `DATA_DIR`, `OUTPUT_DIR` and `VENV_DIR`; `MODEL` and `INFERENCE_SCRIPT` are chosen per job.
 - Actors run in the model images in `IMAGE_DIR` (from `pull_image.sbatch` or `build_apptainer.sbatch`), or in venvs if `IMAGE_DIR` is unset.
 - Submitting jobs to the cluster: [docs/ray.md](../docs/ray.md#slurm-cluster).
-
-The conversion job defaults to `virtual-human-chc/prot_t5_xxl_bfd` on `main`. It requires a Hugging Face login that can open a PR on the model repository. To target another model or revision:
-
-```bash
-MODEL_ID=organization/model SOURCE_REVISION=main \
-    sbatch "${HPC_SCRIPTS}/convert_safetensors.sbatch" "${CONFIG}"
-```
 
 Slurm logs are written to `<job-name>-<job-id>.out` and `.err` in the submission
 directory. Adjust the `#SBATCH` partition, QoS, time, memory, or GPU settings if
