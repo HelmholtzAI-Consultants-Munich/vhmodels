@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-CONFIG_FILE="${1:?Usage: sbatch ray_cluster.sbatch /absolute/path/config.json [serve.yaml]}"
+CONFIG_FILE="${1:?Usage: sbatch ray/cluster.sbatch /absolute/path/config.json [serve.yaml]}"
 if [[ "${CONFIG_FILE}" != /* || ! -f "${CONFIG_FILE}" ]]; then
     echo "ERROR: Pass an absolute path to an existing config.json." >&2
     exit 1

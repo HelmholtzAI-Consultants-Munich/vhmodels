@@ -14,7 +14,7 @@
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
-    echo "Usage: sbatch run_inference.sbatch /absolute/path/config.json" >&2
+    echo "Usage: sbatch apptainer/run_inference.sbatch /absolute/path/config.json" >&2
     exit 1
 fi
 CONFIG_FILE="$1"
@@ -43,7 +43,7 @@ fi
 PYTHON_BIN="$(command -v "${PYTHON_BIN}")"
 APPTAINER_BIN="/usr/bin/apptainer"
 
-# Inference configuration shared with build_apptainer.sbatch.
+# Inference configuration shared with the image jobs.
 IMAGE_DIR="$(jq -er '.IMAGE_DIR' "${CONFIG_FILE}")"
 MODEL="$(jq -er '.MODEL' "${CONFIG_FILE}")"
 
@@ -58,7 +58,7 @@ mkdir -p "${HF_HUB_CACHE}" "${TORCH_HOME}"
 HF_HUB_CACHE="$(realpath -e "${HF_HUB_CACHE}")"
 TORCH_HOME="$(realpath -e "${TORCH_HOME}")"
 
-# Persistent Apptainer image produced by build_apptainer.sbatch.
+# Persistent Apptainer image from pull_image.sbatch or build_image.sbatch.
 IMAGE_PATH="${IMAGE_DIR}/vhmodels-${MODEL}.sif"
 
 export VHMODELS_RUNTIME="apptainer"
@@ -105,7 +105,7 @@ fi
     exit 1
 }
 [[ -f "${IMAGE_PATH}" ]] || {
-    echo "ERROR: ${IMAGE_PATH} does not exist. Run build_apptainer.sbatch first." >&2
+    echo "ERROR: ${IMAGE_PATH} does not exist. Run pull_image.sbatch or build_image.sbatch first." >&2
     exit 1
 }
 

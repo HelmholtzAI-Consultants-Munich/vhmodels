@@ -47,13 +47,13 @@ with vhmodels.load_model(
 
 ## Slurm cluster
 
-[`hpc-job-submit/ray_cluster.sbatch`](../hpc-job-submit/ray_cluster.sbatch)
+[`slurm/ray/cluster.sbatch`](../slurm/ray/cluster.sbatch)
 starts a long-lived single-node Ray cluster; scripts run on it as
 [Ray Jobs](https://docs.ray.io/en/latest/cluster/running-applications/job-submission/quickstart.html).
 
 | Step | Command (login node) |
 | --- | --- |
-| Start | `sbatch hpc-job-submit/ray_cluster.sbatch /abs/config.json [/abs/serve.yaml]`; the log prints `RAY_ADDRESS`; a Serve config is deployed at start |
+| Start | `sbatch slurm/ray/cluster.sbatch /abs/config.json [/abs/serve.yaml]` with a copy of [`ray/config.json`](../slurm/ray/config.json); the log prints `RAY_ADDRESS`; a Serve config is deployed at start |
 | Connect | `export PATH=<repo>/.venv/bin:$PATH RAY_AUTH_MODE=token RAY_ADDRESS=<from the log>` |
 | Submit | `ray job submit --working-dir examples -- python mole.py` |
 | Monitor | `ray job list`, `ray job logs -f <id>`, dashboard at `RAY_ADDRESS` |
@@ -76,7 +76,7 @@ them or the cluster ends; failed replicas are restarted. With Ray Core
 | Step | Command (login node, connected as above) |
 | --- | --- |
 | Connect | As above, plus `export RAY_DASHBOARD_ADDRESS=$RAY_ADDRESS`; the `serve` CLI ignores `RAY_ADDRESS` |
-| Deploy | `serve deploy examples/ray/serve.yaml` (one app per model), or pass the config to `ray_cluster.sbatch` |
+| Deploy | `serve deploy examples/ray/serve.yaml` (one app per model), or pass the config to `ray/cluster.sbatch` |
 | Status | `serve status`; the dashboard's Serve tab |
 | Embed | `curl -X POST <serve URL>/hyformer/embed -H 'Content-Type: application/json' -d '{"input": [...]}'` |
 | Upload files | `curl -F input=@examples_molecules.tsv <serve URL>/mole/predict/files`; see [File uploads](#file-uploads) |
@@ -84,7 +84,7 @@ them or the cluster ends; failed replicas are restarted. With Ray Core
 | API docs | `<serve URL>/<app>/docs` (OpenAPI) |
 | Remove | `serve delete <app>` or `serve shutdown` |
 
-- **Serve URL.** `ray_cluster.sbatch` prints it.
+- **Serve URL.** `ray/cluster.sbatch` prints it.
 - **Config.** In an app's `args`, `ray_options` goes to the replica (e.g. `num_gpus: 0.5`) and every other key to `load_model`. `num_replicas` or `autoscaling_config` go under the app's `deployments` (name `ModelDeployment`); do not set `ray_actor_options` there, it replaces the model's environment.
 - **One request at a time per replica;** further requests wait in a queue.
 - **Input** has the shape of the model's `implementation.input` ([manifest.md](manifest.md#input)), which `GET <app>/info` shows. Other body fields go to the model as keyword arguments. Paths resolve on the replica, so use absolute paths under `DATA_DIR`, or upload the files.

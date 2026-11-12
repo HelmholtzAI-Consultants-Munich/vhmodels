@@ -119,7 +119,7 @@ with vhmodels.load_model(
 Each script under [`examples/`](examples/) loads one model on its example input
 from [`example_data/`](example_data/). Create the model's Conda environment or
 Apptainer image first. Every script also works as `INFERENCE_SCRIPT` in the
-[HPC job submission guide](hpc-job-submit/README.md).
+[HPC job submission guide](slurm/README.md).
 
 | Model | Script |
 | --- | --- |
@@ -163,9 +163,9 @@ vhmodels
 ├───docs                        # Manifest, contribution, Ray and image docs
 ├───example_data                # Example inputs per model
 ├───examples                    # Inference scripts; ray/ for the Ray runtime
-├───hpc-job-submit              # Slurm scripts and config template
 ├───k8s                         # Kubernetes: Ray head, model workers, Serve config
 ├───skills                      # AI agent skills
+├───slurm                       # Slurm jobs: shared image jobs, apptainer/, ray/
 ├───tests                       # Unit and integration tests
 └───vhmodels
     ├───envs                    # Apptainer template and OCI Dockerfile

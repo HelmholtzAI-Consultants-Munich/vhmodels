@@ -1,0 +1,12 @@
+{
+  "IMAGE_DIR": null,
+  "APPTAINER_CACHEDIR": null,
+  "UV_CACHE_DIR": null,
+  "IMAGE_TAG": null,
+  "HF_CACHE_DIR": null,
+  "TORCH_CACHE_DIR": null,
+  "MODEL": "nicheformer",
+  "INFERENCE_SCRIPT": null,
+  "DATA_DIR": null,
+  "OUTPUT_DIR": null
+}

@@ -58,7 +58,6 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           MODELS: ${{ inputs.models }}
-          ONLY_MODELS: ${{ startsWith(github.ref_name, 'ray') && 'mole' || '' }}
         run: |
           # Image specs: all models, the requested ones, or the changed ones
           if [[ "${EVENT}" == workflow_dispatch ]]; then
@@ -76,12 +75,6 @@ jobs:
               vh-checker image-spec \
                 | jq 'map(select(.model_dir | IN($ARGS.positional[])))' --args ${dirs} > specs.json
             fi
-          fi
-
-          # Branch-specific model subset
-          if [[ -n "${ONLY_MODELS}" ]]; then
-            jq 'map(select(.id | IN($ARGS.positional[])))' specs.json --args ${ONLY_MODELS} > subset.json
-            mv subset.json specs.json
           fi
 
           # Model-free Ray head image, in every run

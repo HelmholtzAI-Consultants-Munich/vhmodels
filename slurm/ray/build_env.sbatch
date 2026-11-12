@@ -13,7 +13,11 @@
 
 set -euo pipefail
 
-CONFIG_FILE="${1:?Usage: sbatch build_ray_env.sbatch /absolute/path/config.json}"
+if [[ $# -lt 2 ]]; then
+    echo "Usage: sbatch ray/build_env.sbatch /absolute/path/config.json <MODEL>|--all [--force]" >&2
+    exit 1
+fi
+CONFIG_FILE="$1"
 if [[ "${CONFIG_FILE}" != /* || ! -f "${CONFIG_FILE}" ]]; then
     echo "ERROR: Pass an absolute path to an existing config.json." >&2
     exit 1
@@ -32,10 +36,9 @@ command -v uv >/dev/null 2>&1 || {
     exit 1
 }
 
-# The uv cache is shared with build_apptainer.sbatch, so wheels download once.
+# The uv cache is shared with build_image.sbatch, so wheels download once.
 export UV_CACHE_DIR="$(jq -er '.UV_CACHE_DIR' "${CONFIG_FILE}")"
 export VHMODELS_VENV_DIR="$(jq -er '.VENV_DIR' "${CONFIG_FILE}")"
-MODEL="$(jq -er '.MODEL' "${CONFIG_FILE}")"
 
 uv --version
-"${PYTHON_BIN}" -m vhmodels.vh_checker.cli create-ray-env "${MODEL}"
+"${PYTHON_BIN}" -m vhmodels.vh_checker.cli create-ray-env "${@:2}"

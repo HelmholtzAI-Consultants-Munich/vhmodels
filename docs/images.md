@@ -13,16 +13,16 @@ Kubernetes.
 | `latest` | latest build from `main` |
 | `<model version>-ray<Ray version>` | a model version from `main` (head: `ray<Ray version>`) |
 | `sha-<short commit>` | one commit; never changes |
-| `ray` | latest build from the experimental `ray` branch (MolE and head only) |
+| `ray` | latest build from the experimental `ray` branch |
 
 ## Using an image
 
 | Target | How |
 | --- | --- |
-| Slurm | `sbatch hpc-job-submit/pull_image.sbatch /abs/config.json` writes `<IMAGE_DIR>/vhmodels-<MODEL>.sif` (tag: `IMAGE_TAG`, default `latest`) |
+| Slurm | `sbatch slurm/pull_image.sbatch /abs/config.json [MODEL]` writes `<IMAGE_DIR>/vhmodels-<MODEL>.sif` (tag: `IMAGE_TAG`, default `latest`) |
 | Kubernetes | Run it as a Ray worker pod labeled `vhmodels/project=<model id>` ([k8s/README.md](../k8s/README.md)) |
 | Local (Ray runtime only) | `apptainer pull vhmodels-<model id>.sif docker://ghcr.io/helmholtzai-consultants-munich/vhmodels-<model id>:<tag>` |
 
 - **Both runtimes.** The `.sif` from `pull_image.sbatch` works with `runtime="apptainer"` and `runtime="ray"`; a plain `apptainer pull` only with `runtime="ray"`.
-- **Without GHCR,** `build_apptainer.sbatch` builds the same image on the cluster.
+- **Without GHCR,** `build_image.sbatch` builds the same image on the cluster.
 - **Private images** need credentials: `APPTAINER_DOCKER_USERNAME` / `APPTAINER_DOCKER_PASSWORD` (a GitHub token with `read:packages`) on Slurm, and an `imagePullSecret` on Kubernetes.

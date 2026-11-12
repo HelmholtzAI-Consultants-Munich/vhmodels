@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=build_apptainer
+#SBATCH --job-name=build_image
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-CONFIG_FILE="${1:?Usage: sbatch build_apptainer.sbatch /absolute/path/config.json}"
+CONFIG_FILE="${1:?Usage: sbatch build_image.sbatch /absolute/path/config.json [MODEL]}"
 if [[ "${CONFIG_FILE}" != /* || ! -f "${CONFIG_FILE}" ]]; then
     echo "ERROR: Pass an absolute path to an existing config.json." >&2
     exit 1
@@ -29,7 +29,12 @@ PYTHON_BIN="$(command -v "${PYTHON_BIN}")"
 IMAGE_DIR="$(jq -er '.IMAGE_DIR' "${CONFIG_FILE}")"
 export APPTAINER_CACHEDIR="$(jq -er '.APPTAINER_CACHEDIR' "${CONFIG_FILE}")"
 export UV_CACHE_DIR="$(jq -er '.UV_CACHE_DIR' "${CONFIG_FILE}")"
-MODEL="$(jq -er '.MODEL' "${CONFIG_FILE}")"
+# The model comes from the 2nd argument, otherwise from the config.
+MODEL="${2:-$(jq -r '.MODEL // empty' "${CONFIG_FILE}")}"
+if [[ -z "${MODEL}" ]]; then
+    echo "ERROR: Pass a model ID as the 2nd argument or set MODEL in the config." >&2
+    exit 1
+fi
 
 # Apptainer executable.
 APPTAINER_BIN="/usr/bin/apptainer"

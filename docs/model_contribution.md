@@ -227,5 +227,5 @@ be used in the inference examples.
 
 Add an inference script `examples/<your_model>.py`, following the existing
 scripts, so the model can be run locally and through the
-[HPC job submission](../hpc-job-submit/README.md) workflow. List it in the
+[HPC job submission](../slurm/README.md) workflow. List it in the
 README's examples table.

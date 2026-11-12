@@ -4,7 +4,7 @@ vhmodels.egg-info/
 *.sif
 *.out
 *.err
-hpc-job-submit/config.local.json
+slurm/**/config.local.json
 .DS_Store
 
 output/
