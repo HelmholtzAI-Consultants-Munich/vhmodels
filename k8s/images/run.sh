@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MolE from its GHCR ray-kubernetes image, with vhmodels as the image ships it:
+# MolE from its GHCR ray image, with vhmodels as the image ships it:
 #   1. deploy the Ray head (model-free head image) and a MolE worker node,
 #   2. Ray Core: the unchanged examples/mole.py as a Ray job,
 #   3. Ray Serve: wait for /mole, which the head deploys from serve.yaml on

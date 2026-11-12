@@ -18,7 +18,7 @@ Every model has an OCI image on GHCR, built from [`vhmodels/envs/Dockerfile`](..
 | Trigger | Models | Pushed tags |
 | --- | --- | --- |
 | Pull request | changed | none (build and smoke test only) |
-| Push to `ray*` branches | changed, limited to `mole` | `sha-<short sha>`, branch name |
+| Push to `ray` | changed, limited to `mole` | `sha-<short sha>`, branch name |
 | Push to `main` | changed | `sha-<short sha>`, `<model version>-ray<Ray version>` (head: `ray<Ray version>`), `latest` |
 | Manual (`workflow_dispatch`) | listed, or all | as for the branch it runs on |
 

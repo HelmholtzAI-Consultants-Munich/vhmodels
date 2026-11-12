@@ -38,8 +38,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ray-worker
-          # Follows the ray-kubernetes branch; pin a sha-<commit> tag once it is stable.
-          image: ghcr.io/helmholtzai-consultants-munich/vhmodels-mole:ray-kubernetes
+          # Follows the ray branch; pin a sha-<commit> tag once it is stable.
+          image: ghcr.io/helmholtzai-consultants-munich/vhmodels-mole:ray
           imagePullPolicy: Always
           command:
             - ray

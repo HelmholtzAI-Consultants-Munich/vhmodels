@@ -47,7 +47,7 @@ not affected.
 
 ## vhmodels from the GHCR images
 
-Images come from `.github/workflows/images.yaml`, tagged `ray-kubernetes`.
+Images come from `.github/workflows/images.yaml`, tagged `ray`.
 Every image holds `ray[serve]` and the vhmodels package, so every node runs the
 same Python and the same vhmodels code:
 
@@ -130,7 +130,7 @@ kubectl -n chc exec deploy/vhmodels-head -- serve deploy /etc/vhmodels/serve.yam
   sources survive pod restarts and image updates. Deleting the StatefulSet
   keeps the volume: `kubectl -n chc delete pvc cache-vhmodels-mole-0`.
 - **Images** carry two tags: `sha-<commit>`, fixed, and the branch name
-  (`ray-kubernetes`), which moves with every push. The manifests follow the branch
+  (`ray`), which moves with every push. The manifests follow the branch
   tag with `imagePullPolicy: Always`; pin a `sha-` tag once it is stable.
 
 **Add a model:** copy `images/mole.yaml` with the model's image, name, label,
@@ -194,8 +194,8 @@ curl /embed ──── port-forward 8000 ───►│ API pod     │      
 | Pod | Image | CPU | Memory | Runs |
 | --- | --- | --- | --- | --- |
 | `vhmodels-ray-head` | `rayproject/ray:2.59.0-py311` | 2 | 4Gi | Ray coordinator, dashboard, job API, job drivers |
-| `vhmodels-head` | `ghcr.io/helmholtzai-consultants-munich/vhmodels-head:ray-kubernetes` | 1-2 | 4Gi | Ray head of `images/`: job drivers, Serve controller and proxy |
-| `vhmodels-mole-0` | `ghcr.io/helmholtzai-consultants-munich/vhmodels-mole:ray-kubernetes` | 2 | 6Gi + 5Gi volume | MolE actor and Serve replica (CPU) |
+| `vhmodels-head` | `ghcr.io/helmholtzai-consultants-munich/vhmodels-head:ray` | 1-2 | 4Gi | Ray head of `images/`: job drivers, Serve controller and proxy |
+| `vhmodels-mole-0` | `ghcr.io/helmholtzai-consultants-munich/vhmodels-mole:ray` | 2 | 6Gi + 5Gi volume | MolE actor and Serve replica (CPU) |
 | `vhmodels-ray-worker` | `rayproject/ray:2.59.0-py311` | 2 | 8Gi | H-Optimus-0 actor (CPU, fp32) |
 | `vhmodels-ray-worker-prottrans` | same | 2 | 8Gi | ProtT5-XL-UniRef50 encoder actor (CPU, fp32) |
 | `vhmodels-ray-worker-gpu` | `rayproject/ray:2.59.0-py311-cu126` | 2 + 1 GPU | 8Gi | H-Optimus-0 actor `hoptimus0-gpu` (CUDA, fp16 autocast) |
