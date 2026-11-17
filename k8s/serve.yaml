@@ -1,7 +1,10 @@
-# The Ray Serve config, in the format of examples/ray/serve.yaml. The head
-# deploys it on every start (head.yaml), so the apps come back after a head
-# restart. With VHMODELS_IMAGE_NODES=1, build_app places each app's replicas on
-# its model's image nodes.
+# The Ray Serve config, in the format of examples/ray/serve.yaml: one app per
+# model in models/, on CPU except H-Optimus-0 on the GPU, and one variant per
+# app for multi-variant models.
+# The head deploys it on every start (head.yaml), so the apps come back after a
+# head restart. With VHMODELS_IMAGE_NODES=1, build_app places each app's
+# replicas on its model's worker; an app whose worker is not running waits in
+# DEPLOYING until it joins.
 #
 # To change it: `kubectl apply -f` this file, wait until the head's mounted copy
 # is updated (up to a minute), then
@@ -23,4 +26,40 @@ data:
         import_path: vhmodels.vh_ray.serve.deployment:build_app
         args:
           project: mole
+          device: cpu
+      - name: dinobloom
+        route_prefix: /dinobloom
+        import_path: vhmodels.vh_ray.serve.deployment:build_app
+        args:
+          project: dinobloom
+          model: s
+          device: cpu
+      - name: hoptimus0
+        route_prefix: /hoptimus0
+        import_path: vhmodels.vh_ray.serve.deployment:build_app
+        args:
+          project: hoptimus0
+          device: cuda:0
+          # Half the GPU, so that a Ray job can use the other half.
+          ray_options:
+            num_gpus: 0.5
+      - name: hyformer
+        route_prefix: /hyformer
+        import_path: vhmodels.vh_ray.serve.deployment:build_app
+        args:
+          project: hyformer
+          model: hyformer_molecules_8M
+          device: cpu
+      - name: nicheformer
+        route_prefix: /nicheformer
+        import_path: vhmodels.vh_ray.serve.deployment:build_app
+        args:
+          project: nicheformer
+          device: cpu
+      - name: prottrans
+        route_prefix: /prottrans
+        import_path: vhmodels.vh_ray.serve.deployment:build_app
+        args:
+          project: prottrans
+          model: prot_bert
           device: cpu

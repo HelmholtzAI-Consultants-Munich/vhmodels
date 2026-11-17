@@ -1,0 +1,83 @@
+# Ray worker node that runs H-Optimus-0's image; same layout as mole.yaml,
+# which explains it. The model is gated on Hugging Face: HF_TOKEN comes from
+# the Secret vhmodels-hf-token, a read token of an account that accepted the
+# model's conditions (k8s/README.md, Setup). Without the Secret the pod does
+# not start.
+#
+# GPU: the worker takes the namespace's GPU. GPU nodes are tainted so that only
+# pods that tolerate the taint land there. The Serve app and one Ray job share
+# the GPU (serve.yaml: num_gpus 0.5).
+# Memory: the Serve replica keeps ~4GB in host memory after moving the model to
+# the GPU; a Ray job loading the 4.5GB checkpoint takes about twice its size
+# next to it (12Gi ran out).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vhmodels-hoptimus0
+  labels: &labels
+    app.kubernetes.io/name: vhmodels-hoptimus0
+    app.kubernetes.io/part-of: vhmodels-inference
+spec:
+  serviceName: vhmodels-hoptimus0
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vhmodels-hoptimus0
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 100
+        fsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      containers:
+        - name: ray-worker
+          image: ghcr.io/helmholtzai-consultants-munich/vhmodels-hoptimus0:ray
+          imagePullPolicy: Always
+          command:
+            - ray
+            - start
+            - --address=vhmodels-head:6379
+            - --num-cpus=2
+            - --num-gpus=1
+            - --object-store-memory=536870912
+            - --labels=vhmodels/project=hoptimus0
+            - --block
+          env:
+            - name: VHMODELS_IMAGE_NODES
+              value: "1"
+            - name: HF_HOME
+              value: /cache/huggingface
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: vhmodels-hf-token, key: HF_TOKEN}
+            - name: OMP_NUM_THREADS
+              value: "2"
+          resources:
+            requests: {cpu: "2", memory: 16Gi, nvidia.com/gpu: 1}
+            limits: {cpu: "2", memory: 16Gi, nvidia.com/gpu: 1}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: dshm, mountPath: /dev/shm}
+            - {name: cache, mountPath: /cache}
+      volumes:
+        - name: dshm
+          emptyDir: {medium: Memory, sizeLimit: 768Mi}
+  volumeClaimTemplates:
+    - metadata:
+        name: cache
+        labels:
+          app.kubernetes.io/part-of: vhmodels-inference
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ssd
+        resources: {requests: {storage: 10Gi}}

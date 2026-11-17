@@ -1,0 +1,70 @@
+# Ray worker node that runs Nicheformer's image; same layout as mole.yaml,
+# which explains it. The model and its tokenizer code (trust_remote_code) come
+# from Hugging Face into HF_HOME (0.2GB). Embedding reads the AnnData file in
+# batches, so memory does not grow with the dataset.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vhmodels-nicheformer
+  labels: &labels
+    app.kubernetes.io/name: vhmodels-nicheformer
+    app.kubernetes.io/part-of: vhmodels-inference
+spec:
+  serviceName: vhmodels-nicheformer
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vhmodels-nicheformer
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 100
+        fsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ray-worker
+          image: ghcr.io/helmholtzai-consultants-munich/vhmodels-nicheformer:ray
+          imagePullPolicy: Always
+          command:
+            - ray
+            - start
+            - --address=vhmodels-head:6379
+            - --num-cpus=2
+            - --num-gpus=0
+            - --object-store-memory=536870912
+            - --labels=vhmodels/project=nicheformer
+            - --block
+          env:
+            - name: VHMODELS_IMAGE_NODES
+              value: "1"
+            - name: HF_HOME
+              value: /cache/huggingface
+            - name: OMP_NUM_THREADS
+              value: "2"
+          resources:
+            requests: {cpu: "2", memory: 4Gi}
+            limits: {cpu: "2", memory: 4Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: dshm, mountPath: /dev/shm}
+            - {name: cache, mountPath: /cache}
+      volumes:
+        - name: dshm
+          emptyDir: {medium: Memory, sizeLimit: 768Mi}
+  volumeClaimTemplates:
+    - metadata:
+        name: cache
+        labels:
+          app.kubernetes.io/part-of: vhmodels-inference
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ssd
+        resources: {requests: {storage: 5Gi}}

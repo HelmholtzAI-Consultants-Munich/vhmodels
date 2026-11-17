@@ -1,0 +1,117 @@
+# Ray worker node that runs DinoBloom's image; same layout as mole.yaml, which
+# explains it. The DINOv2 architecture code comes from GitHub into TORCH_HOME
+# (init container below), and the checkpoints from Hugging Face (all variants:
+# 6.2GB).
+#
+# Memory fits a Serve replica and a Ray job's model of variant s, b or l at
+# the same time; g (1.1B parameters, 4.5GB checkpoint) needs more.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vhmodels-dinobloom
+  labels: &labels
+    app.kubernetes.io/name: vhmodels-dinobloom
+    app.kubernetes.io/part-of: vhmodels-inference
+spec:
+  serviceName: vhmodels-dinobloom
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vhmodels-dinobloom
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 100
+        fsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      # Puts the DINOv2 code in torch.hub's cache on the volume before Ray
+      # starts. With an empty cache, torch.hub.load first asks GitHub's API
+      # whether the repo is a fork, and that API allows only 60 anonymous
+      # requests per hour, shared by everything behind the cluster's outgoing
+      # IP. With the cache in place, torch.hub uses it and skips the check. The
+      # archive download below is not an API request. Does nothing once cached.
+      initContainers:
+        - name: dinov2-code
+          image: ghcr.io/helmholtzai-consultants-munich/vhmodels-dinobloom:ray
+          imagePullPolicy: Always
+          command:
+            - python
+            - -c
+            - |
+              import io, os, shutil, tempfile, urllib.request, zipfile
+              hub = os.path.join(os.environ["TORCH_HOME"], "hub")
+              target = os.path.join(hub, "facebookresearch_dinov2_main")
+              if os.path.isdir(target):
+                  print("DINOv2 code already in", target)
+              else:
+                  os.makedirs(hub, exist_ok=True)
+                  url = "https://github.com/facebookresearch/dinov2/archive/refs/heads/main.zip"
+                  with urllib.request.urlopen(url, timeout=300) as response:
+                      archive = zipfile.ZipFile(io.BytesIO(response.read()))
+                  staging = tempfile.mkdtemp(dir=hub)
+                  archive.extractall(staging)
+                  top = archive.namelist()[0].split("/")[0]
+                  os.rename(os.path.join(staging, top), target)
+                  shutil.rmtree(staging)
+                  print("DINOv2 code saved to", target)
+          env:
+            - name: TORCH_HOME
+              value: /cache/torch
+          resources:
+            requests: {cpu: "1", memory: 1Gi}
+            limits: {cpu: "1", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: cache, mountPath: /cache}
+      containers:
+        - name: ray-worker
+          image: ghcr.io/helmholtzai-consultants-munich/vhmodels-dinobloom:ray
+          imagePullPolicy: Always
+          command:
+            - ray
+            - start
+            - --address=vhmodels-head:6379
+            - --num-cpus=2
+            - --num-gpus=0
+            - --object-store-memory=536870912
+            - --labels=vhmodels/project=dinobloom
+            - --block
+          env:
+            - name: VHMODELS_IMAGE_NODES
+              value: "1"
+            - name: HF_HOME
+              value: /cache/huggingface
+            - name: TORCH_HOME
+              value: /cache/torch
+            - name: OMP_NUM_THREADS
+              value: "2"
+          resources:
+            requests: {cpu: "2", memory: 6Gi}
+            limits: {cpu: "2", memory: 6Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - {name: dshm, mountPath: /dev/shm}
+            - {name: cache, mountPath: /cache}
+      volumes:
+        - name: dshm
+          emptyDir: {medium: Memory, sizeLimit: 768Mi}
+  volumeClaimTemplates:
+    - metadata:
+        name: cache
+        labels:
+          app.kubernetes.io/part-of: vhmodels-inference
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ssd
+        resources: {requests: {storage: 10Gi}}

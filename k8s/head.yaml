@@ -42,7 +42,7 @@ spec:
             - --object-store-memory=536870912
             - --block
           # Inherited by job drivers and Serve: scripts use the Ray runtime and
-          # run each model on its image's nodes (mole.yaml).
+          # run each model on its image's nodes (models/).
           env:
             - name: VHMODELS_RUNTIME
               value: ray
