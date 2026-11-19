@@ -6,6 +6,14 @@
     "description": "H-Optimus-0 extracts 1536-dimensional features from H&E histology tiles with a 1.1B-parameter vision transformer.",
     "homepage": "https://huggingface.co/bioptimus/H-optimus-0"
   },
+  "card": {
+    "repo_id": "bioptimus/H-optimus-0",
+    "overrides": {
+      "modality": "histology",
+      "citation": "https://github.com/bioptimus/releases/tree/main/models/h-optimus/v0",
+      "developer": "Bioptimus"
+    }
+  },
   "implementation": {
     "class_path": "HOptimus0.model.HOptimus0",
     "capabilities": ["embed"],

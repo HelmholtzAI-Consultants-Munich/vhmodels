@@ -1,3 +1,4 @@
 {
-  "variant": "prot_xlnet"
+  "variant": "prot_xlnet",
+  "params": "409M"
 }

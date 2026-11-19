@@ -6,6 +6,7 @@
     "description": "a ViT (Vision Transformer) built upon DINOv2 (Meta AI) and trained on data of single cells from peripheral blood and bone marrow",
     "homepage": "https://huggingface.co/virtual-human-chc/DinoBloom"
   },
+  "card": { "repo_id": "virtual-human-chc/DinoBloom" },
   "implementation": {
     "class_path": "DinoBloom.model.DinoBloom",
     "capabilities": ["embed"],

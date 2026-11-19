@@ -1,3 +1,4 @@
 {
-  "variant": "prot_bert_bfd_ss3"
+  "variant": "prot_bert_bfd_ss3",
+  "params": "420M"
 }

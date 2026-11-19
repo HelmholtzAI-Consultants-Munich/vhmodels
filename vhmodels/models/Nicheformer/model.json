@@ -6,6 +6,7 @@
     "description": "A transformer-based foundation model for single-cell and spatial omics",
     "homepage": "https://huggingface.co/virtual-human-chc/Nicheformer"
   },
+  "card": { "repo_id": "virtual-human-chc/Nicheformer" },
   "implementation": {
     "class_path": "Nicheformer.model.Nicheformer",
     "capabilities": ["embed"],

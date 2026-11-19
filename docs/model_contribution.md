@@ -48,6 +48,18 @@ In order for others to easily understand how your model can be used, you need a 
 - References: references cited throughout the description/model card
 - Copyright: information about the copyright
 
+Start the card with this metadata header. `vh-checker catalog` reads it for
+the [model catalog](../vhmodels/models/README.md); see [docs/manifest.md](manifest.md#model-card).
+
+```yaml
+---
+license: apache-2.0 # license of the weights
+vh_modality: proteins # microscopy images, histology, molecules, peptides, proteins or spatial transcriptomics
+vh_citation: https://doi.org/10.xxxx/xxxxx # DOI or URL of the publication
+vh_developer: Doe et al. (Example Lab, Helmholtz Munich)
+---
+```
+
 ## Step 3: add the model to `vhmodels`
 
 Create a new folder for your model in `vhmodels/models`. The folder needs to contain the following files:
@@ -62,6 +74,7 @@ Create a new folder for your model in `vhmodels/models`. The folder needs to con
         "description": "short description of <your_model>",
         "homepage": "link to Hugging Face repository"
     },
+    "card": { "repo_id": "virtual-human-chc/<your_model>" },
     "implementation": {
         "class_path": "<Your_model>.model.<Your_model>",
         "input": { "type": "sequences" }
@@ -111,12 +124,16 @@ requirements must install on it.
 model loads, so `model.py` reads the resolved paths and repo ids instead of
 calling `hf_hub_download` or similar itself.
 
+`card` names the Hugging Face repo whose model card describes your model in
+the [model catalog](../vhmodels/models/README.md) (see [docs/manifest.md](manifest.md#model-card)).
+
 - `manifests/<variant>.json` (one per variant your model exposes, e.g. the
   value passed as `vhmodels.load_model(project=..., model=<variant>)`)
 
 ```json
 {
-    "variant": "<variant_id>"
+    "variant": "<variant_id>",
+    "params": "<parameter count, e.g. 86M>"
 }
 ```
 

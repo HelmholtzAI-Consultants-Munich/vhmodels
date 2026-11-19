@@ -6,6 +6,7 @@
     "description": "A joint transformer-based model that unifies a generative decoder with a predictive encoder",
     "homepage": "https://huggingface.co/collections/virtual-human-chc/hyformer"
   },
+  "card": { "repo_id": "virtual-human-chc/{variant}" },
   "implementation": {
     "class_path": "Hyformer.model.Hyformer",
     "capabilities": ["embed"],

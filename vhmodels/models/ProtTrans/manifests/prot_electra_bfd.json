@@ -9,5 +9,8 @@
       "type": "huggingface",
       "repo_id": "virtual-human-chc/prot_electra_discriminator_bfd"
     }
+  },
+  "card": {
+    "repo_id": "virtual-human-chc/prot_electra_discriminator_bfd"
   }
 }

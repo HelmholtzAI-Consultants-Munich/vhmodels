@@ -13,6 +13,10 @@ environment or an Apptainer container, or as a Ray actor on Slurm or Kubernetes
 Metadata and resource locations are declared in `model.json` and
 `manifests/<variant>.json` ([docs/manifest.md](docs/manifest.md)).
 
+All models and their variants are listed in the
+[model catalog](vhmodels/models/README.md), which `vh-checker catalog`
+generates from the manifests and the Hugging Face model cards.
+
 ## Installation
 
 ```bash
@@ -33,6 +37,16 @@ need to install uv on the host.
 ```bash
 vh-checker list
 ```
+
+### Update the model catalog
+
+```bash
+vh-checker catalog
+```
+
+This rebuilds the [model catalog](vhmodels/models/README.md) from the manifests
+and the Hugging Face model cards. Run it after adding a model, changing a
+manifest or editing a model card, and commit the result.
 
 ### Create a Conda environment
 

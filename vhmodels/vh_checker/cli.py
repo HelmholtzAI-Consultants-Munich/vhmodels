@@ -48,6 +48,28 @@ def list():
     console.print(table)
 
 
+@main.command()
+@click.option(
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Where to write the catalog [default: vhmodels/models/README.md].",
+)
+def catalog(output):
+    """Write the model catalog from the manifests and Hugging Face model cards."""
+    from vhmodels.models import catalog as model_catalog
+    from vhmodels.models import discovery
+
+    output = output or discovery.models_dir() / "README.md"
+    models, problems = model_catalog.collect(REGISTRY)
+    problems += model_catalog.unused_repos(REGISTRY, model_catalog.list_org_repos())
+    output.write_text(model_catalog.render(models), encoding="utf-8")
+    for problem in problems:
+        click.echo(f"{problem.level}: {problem.message}", err=True)
+    click.echo(f"Wrote {output}")
+    if any(problem.level == "error" for problem in problems):
+        raise SystemExit(1)
+
+
 def _check_conda_installed():
     """Check if Conda is available"""
     try:

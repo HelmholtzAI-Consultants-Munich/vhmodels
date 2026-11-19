@@ -1,3 +1,4 @@
 {
-  "variant": "prot_albert"
+  "variant": "prot_albert",
+  "params": "224M"
 }

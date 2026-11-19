@@ -1,3 +1,4 @@
 {
-  "variant": "hyformer_molecules_8M"
+  "variant": "hyformer_molecules_8M",
+  "params": "8M"
 }

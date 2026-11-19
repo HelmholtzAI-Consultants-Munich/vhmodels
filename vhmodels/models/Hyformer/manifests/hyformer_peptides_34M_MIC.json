@@ -1,3 +1,4 @@
 {
-  "variant": "hyformer_peptides_34M_MIC"
+  "variant": "hyformer_peptides_34M_MIC",
+  "params": "34M"
 }

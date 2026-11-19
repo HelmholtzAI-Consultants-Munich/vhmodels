@@ -1,5 +1,6 @@
 {
   "variant": "prot_t5_xxl_bfd",
+  "params": "11B",
   "sources": {
     "weights": {
       "type": "huggingface",

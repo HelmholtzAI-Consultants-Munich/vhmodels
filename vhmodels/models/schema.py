@@ -184,6 +184,30 @@ class Implementation(_Strict):
     input: Optional[ModelInput] = None
 
 
+# --- Model card -------------------------------------------------------------------
+
+
+class CardFields(_Strict):
+    """Catalog fields read from a Hugging Face model card.
+
+    On the card they are the ``license``, ``vh_modality``, ``vh_citation`` and
+    ``vh_developer`` metadata keys. Here, as ``card.overrides``, they fill or
+    correct a card that cannot be edited, e.g. an external model's.
+    """
+
+    license: Optional[str] = None
+    modality: Optional[str] = None
+    citation: Optional[str] = None
+    developer: Optional[str] = None
+
+
+class Card(_Strict):
+    """The Hugging Face model card that describes a model or variant."""
+
+    repo_id: str
+    overrides: CardFields = Field(default_factory=CardFields)
+
+
 # --- model.json -----------------------------------------------------------------
 
 
@@ -194,6 +218,7 @@ class ModelManifest(_Strict):
     runtimes: Runtimes
     supported_platforms: List[str]
     sources: Dict[str, Source] = Field(default_factory=dict)
+    card: Optional[Card] = None
     # Populated by Registry after loading; absent from the on-disk JSON.
     model_dir: str = ""
 
@@ -204,7 +229,11 @@ class ModelManifest(_Strict):
 class VariantManifest(_Strict):
     variant: str
     description: Optional[str] = None
+    # Parameter count as shown in the catalog, e.g. "86M" or "1.1B".
+    params: Optional[str] = None
     sources: Dict[str, Source] = Field(default_factory=dict)
+    # Replaces the model-level card, e.g. for a variant without its own repo.
+    card: Optional[Card] = None
 
 
 # --- fully resolved, ready-to-run manifest ----------------------------------------
@@ -218,5 +247,7 @@ class ResolvedManifest(_Strict):
     supported_platforms: List[str]
     variant: str
     description: str
+    params: Optional[str] = None
     sources: Dict[str, Source]
+    card: Optional[Card] = None
     model_dir: str

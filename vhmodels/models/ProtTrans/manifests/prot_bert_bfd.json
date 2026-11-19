@@ -1,3 +1,4 @@
 {
-  "variant": "prot_bert_bfd"
+  "variant": "prot_bert_bfd",
+  "params": "420M"
 }

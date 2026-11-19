@@ -6,6 +6,7 @@
     "description": "State of the art pre-trained models for proteins",
     "homepage": "https://huggingface.co/collections/virtual-human-chc/prottrans"
   },
+  "card": { "repo_id": "virtual-human-chc/{variant}" },
   "implementation": {
     "class_path": "ProtTrans.model.ProtTrans",
     "capabilities": ["embed"],

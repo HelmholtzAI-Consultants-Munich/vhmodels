@@ -23,6 +23,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from vhmodels.models import discovery
 from vhmodels.models.schema import (
+    Card,
     ModelManifest,
     ResolvedManifest,
     Source,
@@ -120,6 +121,10 @@ class Registry:
             for name, source in merged_sources.items()
         }
 
+        card = variant_manifest.card or manifest.card
+        if card is not None:
+            card = Card.model_validate(_substitute(card.model_dump(), variant))
+
         return ResolvedManifest(
             schema_version=manifest.schema_version,
             model=manifest.model,
@@ -128,7 +133,9 @@ class Registry:
             supported_platforms=manifest.supported_platforms,
             variant=variant,
             description=variant_manifest.description or manifest.model.description,
+            params=variant_manifest.params,
             sources=resolved_sources,
+            card=card,
             model_dir=manifest.model_dir,
         )
 

@@ -1,3 +1,4 @@
 {
-  "variant": "prot_electra_discriminator_bfd"
+  "variant": "prot_electra_discriminator_bfd",
+  "params": "420M"
 }
